@@ -1,0 +1,49 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="ru.mirea.orbita" android:versionCode="73" android:versionName="1.70">
+  <uses-permission android:name="android.permission.INTERNET" />
+  <uses-permission android:name="android.permission.READ_CALENDAR" />
+  <uses-permission android:name="android.permission.WRITE_CALENDAR" />
+  <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+  <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+  <uses-sdk android:minSdkVersion="26" android:targetSdkVersion="35" />
+  <application android:label="Орбита" android:icon="@mipmap/orbita_violet" android:theme="@style/AppTheme" android:allowBackup="false" android:usesCleartextTraffic="false" android:supportsRtl="true">
+    <activity android:name=".MainActivity" android:exported="true" android:configChanges="orientation|screenSize|keyboardHidden" android:windowSoftInputMode="adjustResize">
+      <intent-filter><action android:name="android.intent.action.VIEW"/><category android:name="android.intent.category.DEFAULT"/><category android:name="android.intent.category.BROWSABLE"/><data android:scheme="orbita" android:host="join"/></intent-filter>
+      
+    </activity>
+    <activity-alias android:name=".LauncherViolet" android:targetActivity=".MainActivity"
+        android:exported="true" android:icon="@mipmap/orbita_violet">
+      <intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter>
+    </activity-alias>
+    <activity-alias android:name=".LauncherBlue" android:targetActivity=".MainActivity"
+        android:enabled="false" android:exported="true" android:icon="@mipmap/orbita_blue">
+      <intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter>
+    </activity-alias>
+    <activity-alias android:name=".LauncherGreen" android:targetActivity=".MainActivity"
+        android:enabled="false" android:exported="true" android:icon="@mipmap/orbita_green">
+      <intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter>
+    </activity-alias>
+    <activity-alias android:name=".LauncherRose" android:targetActivity=".MainActivity"
+        android:enabled="false" android:exported="true" android:icon="@mipmap/orbita_rose">
+      <intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter>
+    </activity-alias>
+    <activity-alias android:name=".LauncherAmber" android:targetActivity=".MainActivity"
+        android:enabled="false" android:exported="true" android:icon="@mipmap/orbita_amber">
+      <intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter>
+    </activity-alias>
+    <activity-alias android:name=".LauncherDark" android:targetActivity=".MainActivity"
+        android:enabled="false" android:exported="true" android:icon="@mipmap/orbita_dark">
+      <intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter>
+    </activity-alias>
+    <activity android:name=".QuickTaskActivity" android:exported="false" android:theme="@style/QuickTaskTheme"
+        android:taskAffinity="" android:excludeFromRecents="true" android:windowSoftInputMode="adjustResize"/>
+    <activity android:name=".WidgetCelebrationActivity" android:exported="false"
+        android:theme="@style/WidgetCelebrationTheme" android:taskAffinity="" android:excludeFromRecents="true"/>
+    <service android:name=".ScheduleWatch" android:exported="true" android:permission="android.permission.BIND_JOB_SERVICE"/>
+    <receiver android:name=".WorkReminder" android:exported="false"><intent-filter><action android:name="android.intent.action.BOOT_COMPLETED"/><action android:name="android.intent.action.MY_PACKAGE_REPLACED"/></intent-filter></receiver>
+    <receiver android:name=".LessonReminder" android:exported="false"><intent-filter><action android:name="android.intent.action.BOOT_COMPLETED"/><action android:name="android.intent.action.MY_PACKAGE_REPLACED"/></intent-filter></receiver>
+    <receiver android:name=".NextClassWidget" android:exported="false" android:label="Орбита · Ближайшая пара"><intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE"/></intent-filter><meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_next"/></receiver>
+    <receiver android:name=".DayScheduleWidget" android:exported="false" android:label="Орбита · Расписание"><intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE"/></intent-filter><meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_day"/></receiver>
+    <receiver android:name=".TasksWidget" android:exported="false" android:label="Орбита · Задачи"><intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE"/></intent-filter><meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_tasks"/></receiver>
+    <receiver android:name=".DeadlineWidget" android:exported="false" android:label="Орбита · Дедлайны"><intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE"/></intent-filter><meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_deadlines"/></receiver>
+  </application>
+</manifest>

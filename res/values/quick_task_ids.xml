@@ -1,0 +1,9 @@
+<resources>
+    <item type="id" name="quick_work_kind"/>
+    <item type="id" name="quick_work_subject"/>
+    <item type="id" name="quick_work_number"/>
+    <item type="id" name="quick_work_comment"/>
+    <item type="id" name="quick_work_major"/>
+    <item type="id" name="quick_work_save"/>
+    <item type="id" name="quick_work_status"/>
+</resources>

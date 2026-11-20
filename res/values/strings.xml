@@ -1,0 +1,6 @@
+<resources>
+  <string name="widget_next_description">Текущая или ближайшая пара своей группы.</string>
+  <string name="widget_day_description">Пары своей группы на сегодня.</string>
+  <string name="widget_tasks_description">Управление несданными работами на рабочем столе.</string>
+  <string name="widget_deadlines_description">Открытые задачи по сроку сдачи, начиная с самого раннего.</string>
+</resources>
