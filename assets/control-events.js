@@ -123,6 +123,7 @@ function showControlEvent(id){
    <button type="button" id="control-calendar">Добавить или изменить в Google Календаре</button>
    <button type="button" id="control-delete">Удалить мероприятие</button>
   </div><div id="control-extra"></div>`);
+ window.addDebtMarkAction?.('event:'+event.id,$('#control-edit'),()=>showControlEvent(event.id));
  $('#control-edit').onclick=()=>editControlEvent(controlCourse(event),event);
  $('#control-task').onclick=()=>openOrCreateControlTask(id);
  $('#control-link').onclick=()=>pickControlTask(event);

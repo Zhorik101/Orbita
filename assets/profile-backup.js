@@ -43,6 +43,7 @@ function localBackupData(source){
   .filter(item=>required.some(key=>typeof item[key]==='string'&&item[key].trim())):[];
  const data={
   tasks:list(source.tasks,backupTaskFields,['text']),
+  ...(typeof cleanDebtMarks==='function'?{debtMarks:cleanDebtMarks(source.debtMarks)}:{}),
   ...(typeof controlEventList==='function'?{controlEvents:controlEventList(source.controlEvents)}:{}),
   notebooks:list(source.notebooks,backupNoteFields,['body','title']),
   notes:isOrbitaRecord(source.notes)?Object.fromEntries(Object.entries(source.notes).filter(([,v])=>typeof v==='string')):{}
@@ -91,8 +92,8 @@ async function parseProfileBackup(json){
   throw new Error('В файле нет профиля Орбиты.');
  if(typeof data.schemaVersion==='number'&&data.schemaVersion>orbitaSchemaVersion)
   throw new Error('Профиль создан в более новой версии Орбиты.');
- for(const key of ['tasks','notebooks','notes','controlEvents']){
-  if(key in data&&!(key==='notes'?isOrbitaRecord(data[key]):Array.isArray(data[key])))
+ for(const key of ['tasks','notebooks','notes','controlEvents','debtMarks']){
+  if(key in data&&!(['notes','debtMarks'].includes(key)?isOrbitaRecord(data[key]):Array.isArray(data[key])))
    throw new Error('Один из разделов файла повреждён.');
  }
  return localBackupData(data);
@@ -115,7 +116,7 @@ function mergeProfileBackup(current, data, settings){
  };
  const taskText=task=>JSON.stringify(['text','subject','dueISO','due','comment'].map(key=>task[key]||''));
  const noteText=note=>JSON.stringify([note.title||'',note.body||'']);
- const {tasks,notebooks,notes,homeNote,controlEvents,...preferences}=data;
+ const {tasks,notebooks,notes,homeNote,controlEvents,debtMarks,...preferences}=data;
  const mergedTasks=addUnique(current.tasks,tasks,'workId',taskText);
  const mergedEvents=typeof controlEventList==='function'?controlEventList([
   ...controlEventList(current.controlEvents),
@@ -125,9 +126,20 @@ function mergeProfileBackup(current, data, settings){
    return {...event,taskId:incoming&&restored&&taskText(incoming)===taskText(restored)?event.taskId:''};
   })
  ]):undefined;
+ const restoredMarks=typeof cleanDebtMarks==='function'?Object.fromEntries(
+  Object.entries(cleanDebtMarks(debtMarks)).filter(([key])=>{
+   const id=key.slice(key.indexOf(':')+1);
+   if(key.startsWith('event:'))return (controlEvents||[]).some(event=>event.id===id)
+    &&mergedEvents?.some(event=>event.id===id);
+   const original=tasks.find(task=>task.workId===id);
+   const restored=mergedTasks.find(task=>task.workId===id);
+   return original&&restored&&taskText(original)===taskText(restored);
+  })
+ ):null;
  return {...current,...(settings?preferences:{}),
   tasks:mergedTasks,
   ...(mergedEvents?{controlEvents:mergedEvents}:{}),
+  ...(restoredMarks?{debtMarks:{...restoredMarks,...cleanDebtMarks(current.debtMarks)}}:{}),
   notebooks:addUnique(current.notebooks,notebooks,'id',noteText),
   notes:{...notes,...current.notes},
   homeNote:current.homeNote||homeNote||''

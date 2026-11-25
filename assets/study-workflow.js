@@ -111,6 +111,7 @@ addTask=function(subjectPreset, options={}){
    if(changeWork(index,'delete'))$('#modal').close();
   };
   window.addControlTaskLink?.(original,$('#save-work-template'));
+  window.addDebtMarkAction?.('task:'+original.workId,$('#save-work-template'),()=>addTask(null,{workId:original.workId}));
   $('#work-intro').textContent='';
   $('#work-intro').hidden=true;
   $('#work-number').value=initialNumber;
