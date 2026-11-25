@@ -1,0 +1,21 @@
+.course-discipline-heading .discipline-open {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 0;
+  color: var(--text);
+  text-align: left;
+  font: inherit;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+.discipline-open svg { flex-shrink: 0; }
+#discipline-title { overflow-wrap: anywhere; }
+.discipline-panel h2 { margin: 0 0 10px; font-size: 17px; }
+.discipline-panel p, .discipline-panel small { color: var(--muted); line-height: 1.5; }
+.discipline-panel p:empty { display: none; }
+.discipline-panel ul { padding: 0; list-style: none; }
+.discipline-panel li { padding: 10px 0; border-top: 1px solid var(--line); overflow-wrap: anywhere; }
+.discipline-panel li small { display: block; }
+.discipline-panel button { min-height: 44px; text-align: left; color: var(--accent); }

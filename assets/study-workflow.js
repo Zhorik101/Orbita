@@ -235,6 +235,7 @@ function loadCourseGrades(){
  courseGradesLoading=true;
  courseGradeRefreshError=false;
  if(page==='mini-courses')paintCourseTools();
+ if(page==='mini-discipline')window.paintDiscipline?.();
  const request=++courseGradeRequest;
  requestMireaReply('grades:'+request,()=>window.OrbitaAndroid.loadMireaGrades(request),
   result=>window.orbitaMireaGrades(request,result));
@@ -248,6 +249,7 @@ window.orbitaMireaGrades=(request,result)=>{
   courseGradeResult=result;
  }
  if(page==='mini-courses')paintCourseTools();
+ if(page==='mini-discipline')window.paintDiscipline?.();
  if(page==='pairs')renderPairs();
 };
 window.orbitaRefreshMireaGrades=()=>{
@@ -275,7 +277,8 @@ window.orbitaMireaAttendance=(request,result)=>{
  const id=attendanceRequests.get(request);
  if(!id||!takeMireaReply('course:'+request))return;
  attendanceRequests.delete(request);
- attendanceByCourse.set(id,result);
+ attendanceByCourse.set(id,result.error?result:{...result,updated:Date.now()});
+ if(page==='mini-discipline')window.paintDiscipline?.();
  if(page==='mini-courses'&&[...$$('[data-sport-attendance]')].some(node=>node.dataset.sportAttendance===id))paintCourseTools();
  if(attendanceDialog?.id===id&&$('#course-attendance-content')&&$('#modal').open)paintAttendanceDialog();
  if(page==='pairs')renderPairs();
@@ -401,6 +404,7 @@ window.orbitaRefreshAttendance=()=>{
  resetAttendanceRequests();
  if(page==='pairs')renderPairs();
  if(page==='mini-courses')paintCourseTools();
+ if(page==='mini-discipline')window.paintDiscipline?.();
 };
 function isPhysicalEducation(name){
  return /физическ(?:ая|ой) культур|физкультур/i.test(name);
@@ -448,7 +452,7 @@ function paintCourseTools(){
  const hasSavedScores=Array.isArray(result?.courses);
  const freshness=$('#course-grade-freshness');
  freshness.textContent=hasSavedScores
-  ?(courseGradesLoading?'Обновляем…':courseGradeRefreshError?'Сохранённые баллы · не удалось обновить':'')
+  ?(courseGradesLoading?'Обновляем…':courseGradeRefreshError?'Сохранённые баллы · не удалось обновить':window.disciplineUpdated?.(result.updated)||'')
   :'';
  freshness.hidden=!freshness.textContent;
  const semester=$('#course-grade-semester');
@@ -469,10 +473,17 @@ function paintCourseTools(){
  }
  const totals=visibleScores.map(score=>score.total).filter(Number.isFinite);
  $('#course-grade-summary').innerHTML=totals.length?`<div class="course-summary"><div><strong>${gradeNumber(totals.reduce((a,b)=>a+b,0)/totals.length)}</strong><span>Средний балл</span></div><div><strong>${visibleScores.length}</strong><span>Дисциплин в БРС</span></div></div>`:'';
+ if(!hasSavedScores){
+  for(const name of window.scheduledDisciplines?.()||[])subjects.set(subjectKey(name),{name,score:null});
+ }
  const rowsBySubject=[...subjects.values()].sort((a,b)=>a.name.localeCompare(b.name,'ru'));
  $('#mini-courses-body').innerHTML=rowsBySubject.map(({name,score},index)=>`<article class="course-discipline">
- <div class="course-discipline-heading"><h2>${safe(name)}</h2><button type="button" data-course-task="${index}">+ Работа</button></div>
+ <div class="course-discipline-heading"><h2><button type="button" class="discipline-open" data-open-discipline="${index}">${safe(name)} ${courseChevron()}</button></h2><button type="button" data-course-task="${index}">+ Работа</button></div>
  ${courseScoreHtml(score)}</article>`).join('')||(!courseGradesLoading&&!result?.error&&result?'<p>В этом семестре нет дисциплин в БРС.</p>':'');
+ $$('[data-open-discipline]').forEach(button=>{
+  const row=rowsBySubject[Number(button.dataset.openDiscipline)];
+  button.onclick=()=>window.openDiscipline?.(row.name,row.score);
+ });
  $$('[data-course-task]').forEach(button=>{
   const {name,score}=rowsBySubject[Number(button.dataset.courseTask)];
   button.onclick=()=>addTask(name);
