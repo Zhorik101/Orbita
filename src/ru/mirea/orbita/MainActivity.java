@@ -24,6 +24,7 @@ public class MainActivity extends Activity {
     protected WebView web;
     private String pendingCalendar;
     private ProfileBackupFiles backupFiles;
+    private SdoMaterials sdoMaterials;
     private GoogleWorkAttachment attachments;
     private volatile int topInset, bottomInset, keyboardInset;
     private boolean pageReady;
@@ -55,6 +56,10 @@ public class MainActivity extends Activity {
             else pendingBackupScript = script;
         });
         backupFiles.restore(savedInstanceState);
+        sdoMaterials = new SdoMaterials(this, script -> {
+            if (pageReady && web != null) web.evaluateJavascript(script, null);
+        });
+        sdoMaterials.restore(savedInstanceState);
 
         preferences = getSharedPreferences("orbita", Context.MODE_PRIVATE);
         preferences.registerOnSharedPreferenceChangeListener(widgetListener);
@@ -186,6 +191,14 @@ public class MainActivity extends Activity {
             if(link==null||link.length()>1000||!link.startsWith("https://"))return;
             runOnUiThread(new Runnable(){@Override public void run(){try{startActivity(Intent.createChooser(new Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT,"Приглашение в команду Орбиты: "+link),"Пригласить в команду"));}catch(Exception ignored){}}});
         }
+
+        @JavascriptInterface public String sdoFiles() { return sdoMaterials.list(); }
+        @JavascriptInterface public void importSdoFiles() { runOnUiThread(sdoMaterials::choose); }
+        @JavascriptInterface public void cancelSdoImport() { sdoMaterials.cancel(); }
+        @JavascriptInterface public void openSdoFile(String id) { if (validSdoId(id)) runOnUiThread(() -> sdoMaterials.open(id)); }
+        @JavascriptInterface public void exportSdoFile(String id) { if (validSdoId(id)) runOnUiThread(() -> sdoMaterials.export(id)); }
+        @JavascriptInterface public void deleteSdoFile(String id) { if (validSdoId(id)) sdoMaterials.remove(id); }
+        private boolean validSdoId(String id) { return id != null && id.matches("[a-f0-9]{64}"); }
 
         @JavascriptInterface public void syncCalendarPairs(String payload) { CalendarSync.pairs(MainActivity.this, payload); }
         @JavascriptInterface public String calendarSyncStatus() { return CalendarSync.statusText(MainActivity.this); }
@@ -566,6 +579,7 @@ public class MainActivity extends Activity {
         super.onSaveInstanceState(out);
         attachments.save(out);
         backupFiles.save(out);
+        sdoMaterials.save(out);
     }
 
     @Override protected void onActivityResult(int requestCode, int resultCode, Intent data) {
@@ -575,6 +589,7 @@ public class MainActivity extends Activity {
             return;
         }
 
+        if (sdoMaterials.onResult(requestCode,resultCode,data)) return;
         if (backupFiles.onResult(requestCode,resultCode,data)) return;
         if (attachments.onResult(requestCode,resultCode,data)) return;
         if (requestCode!=701) return;
