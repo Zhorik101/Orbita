@@ -23,9 +23,11 @@ import java.io.InputStream;
 public class MainActivity extends Activity {
     protected WebView web;
     private String pendingCalendar;
+    private ProfileBackupFiles backupFiles;
     private GoogleWorkAttachment attachments;
     private volatile int topInset, bottomInset, keyboardInset;
     private boolean pageReady;
+    private String pendingBackupScript;
     private final java.util.concurrent.ExecutorService scheduleNetwork=java.util.concurrent.Executors.newFixedThreadPool(2);
     private static final String ORIGIN = "https://orbita.local/";
 
@@ -48,6 +50,12 @@ public class MainActivity extends Activity {
             if (web != null) web.evaluateJavascript("window.orbitaAttachmentResult?.("+JSONObject.quote(id)+","+JSONObject.quote(message)+","+trashed+")",null);
         });
         attachments.restore(savedInstanceState);
+        backupFiles = new ProfileBackupFiles(this, scheduleNetwork, script -> {
+            if (pageReady && web != null) web.evaluateJavascript(script, null);
+            else pendingBackupScript = script;
+        });
+        backupFiles.restore(savedInstanceState);
+
         preferences = getSharedPreferences("orbita", Context.MODE_PRIVATE);
         preferences.registerOnSharedPreferenceChangeListener(widgetListener);
         if (android.os.Build.VERSION.SDK_INT >= 30) getWindow().setDecorFitsSystemWindows(false);
@@ -84,6 +92,10 @@ public class MainActivity extends Activity {
                 syncWidgetTasks();
                 importScheduleChanges();
                 dispatchAppIntent();
+                if (pendingBackupScript != null) {
+                    view.evaluateJavascript(pendingBackupScript, null);
+                    pendingBackupScript = null;
+                }
             }
             @Override public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
                 Uri uri = request.getUrl();
@@ -419,6 +431,12 @@ public class MainActivity extends Activity {
                 .putExtra("background", color).putExtra("account", account), 730));
         }
 
+        @JavascriptInterface public void exportProfileBackup(String content) {
+            runOnUiThread(() -> backupFiles.exportFile(content));
+        }
+        @JavascriptInterface public void importProfileBackup() {
+            runOnUiThread(() -> backupFiles.importFile());
+        }
         @JavascriptInterface public void exportCalendar(String content) {
             if (content == null || content.length()>500000 || !content.startsWith("BEGIN:VCALENDAR")) return;
             pendingCalendar = content;
@@ -490,6 +508,7 @@ public class MainActivity extends Activity {
     @Override protected void onSaveInstanceState(Bundle out) {
         super.onSaveInstanceState(out);
         attachments.save(out);
+        backupFiles.save(out);
     }
 
     @Override protected void onActivityResult(int requestCode, int resultCode, Intent data) {
@@ -499,6 +518,7 @@ public class MainActivity extends Activity {
             return;
         }
 
+        if (backupFiles.onResult(requestCode,resultCode,data)) return;
         if (attachments.onResult(requestCode,resultCode,data)) return;
         if (requestCode!=701) return;
         String content = pendingCalendar; pendingCalendar = null;
