@@ -111,7 +111,7 @@ addTask=function(subjectPreset, options={}){
    if(changeWork(index,'delete'))$('#modal').close();
   };
   window.addControlTaskLink?.(original,$('#save-work-template'));
-  window.addSdoTaskLinks?.(original,$('#save-work-template'));
+  if(!window.OrbitaAndroid?.attachWorkFile)window.addSdoTaskLinks?.(original,$('#save-work-template'));
   $('#work-intro').textContent='';
   $('#work-intro').hidden=true;
   $('#work-number').value=initialNumber;

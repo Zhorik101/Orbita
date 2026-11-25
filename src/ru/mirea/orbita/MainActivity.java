@@ -179,6 +179,13 @@ public class MainActivity extends Activity {
         @JavascriptInterface public void attachWorkFile(String id, boolean retry) {
             runOnUiThread(() -> attachments.start(id,retry));
         }
+        @JavascriptInterface public void attachSdoWorkFile(String workId,String fileId) {
+            if (!validSdoId(fileId)) return;
+            runOnUiThread(() -> {
+                Uri source=sdoMaterials.attachmentUri(fileId);
+                if (source!=null) attachments.start(workId,false,source);
+            });
+        }
         @JavascriptInterface public String scheduleInbox() { return ScheduleWatch.inbox(MainActivity.this); }
         @JavascriptInterface public void ackScheduleInbox(long stamp) { ScheduleWatch.acknowledge(MainActivity.this, stamp); }
         @JavascriptInterface public void scheduleBaseline(String key, String raw) { ScheduleWatch.baseline(MainActivity.this, key, raw); }

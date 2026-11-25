@@ -70,8 +70,9 @@ syncOwnPairsToCalendar();
 function showWorkAttachmentControls(task){
  const root=document.createElement('section');
  root.className='work-attachments';root.dataset.workAttachmentId=task.workId;
- root.innerHTML='<b>Вложения Google Календаря</b><div data-work-files></div><p role="status" data-file-status></p>';
+ root.innerHTML='<b>Вложения</b><div data-sdo-files></div><div data-work-files></div><p role="status" data-file-status></p>';
  $('#save-work-template').before(root);
+ window.addSdoTaskLinks?.(task,root.querySelector('[data-sdo-files]'));
  paintWorkAttachments(root,task.workId);
 }
 function paintWorkAttachments(root,id){
@@ -90,7 +91,7 @@ function paintWorkAttachments(root,id){
  const retry=!!(data.pending||data.selected);
  button.id='work-attachment-action';
  button.textContent=retry?'Повторить прикрепление':'📎 Прикрепить файл';
- button.onclick=()=>{
+ const attachPhone=()=>{
   if(!state.calendarAutoSync?.tasks){
    root.querySelector('[data-file-status]').textContent='Включи синхронизацию задач с Google Календарём в настройках.';
    return;
@@ -100,6 +101,17 @@ function paintWorkAttachments(root,id){
   window.OrbitaAndroid.attachWorkFile(id,retry);
  };
  list.append(button);
+ button.onclick=()=>{
+  if(retry||!window.OrbitaAndroid?.attachSdoWorkFile){attachPhone();return}
+  const old=list.querySelector('[data-attachment-picker]');
+  if(old){old.remove();return}
+  const picker=document.createElement('div');
+  picker.dataset.attachmentPicker='';
+  picker.innerHTML='<button type="button" data-phone-file>С телефона</button>';
+  picker.querySelector('[data-phone-file]').onclick=attachPhone;
+  window.addSdoCalendarPicker?.(picker,id);
+  list.append(picker);
+ };
 }
 window.orbitaAttachmentResult=(id,message,trashed=false)=>{
  const trashStatus=$('#completed-trash-status');
@@ -123,6 +135,6 @@ window.orbitaAttachmentResult=(id,message,trashed=false)=>{
  const root=$('[data-work-attachment-id]');
  if(!root?.isConnected||!$('#modal').open||root.dataset.workAttachmentId!==id){toast(message);return}
  paintWorkAttachments(root,id);
- if(message.startsWith('Прикрепляем'))root.querySelector('button').disabled=true;
+ if(message.startsWith('Прикрепляем'))root.querySelector('#work-attachment-action').disabled=true;
  root.querySelector('[data-file-status]').textContent=message;
 };

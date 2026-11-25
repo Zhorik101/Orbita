@@ -120,6 +120,16 @@ final class SdoMaterials {
         } catch (RuntimeException error) { finish("Не удалось открыть выбор документов.", new JSONArray()); }
     }
 
+    Uri attachmentUri(String id) {
+        try {
+            var details=metadata(id);
+            var item=file(id,details);
+            if (item!=null && item.isFile()) return FileProvider.getUriForFile(activity,
+                activity.getPackageName()+".materials",item,details.getString("name"));
+        } catch (Exception ignored) {}
+        return null;
+    }
+
     void open(String id) {
         try {
             var details = metadata(id);

@@ -70,7 +70,9 @@ final class GoogleWorkAttachment {
         file = uri == null ? null : Uri.parse(uri);
     }
 
-    void start(String id, boolean retry) {
+    void start(String id, boolean retry) { start(id,retry,null); }
+
+    void start(String id, boolean retry, Uri libraryFile) {
         if (!validId(id)) return;
         if (busy || workId != null) { listener.report(id,"Дождись завершения операции с файлом.",false); return; }
         try { attachmentState(id); }
@@ -79,6 +81,17 @@ final class GoogleWorkAttachment {
         if (retry) {
             String selected=storage().getString("source:"+id,null);
             file=selected==null?null:Uri.parse(selected);
+            authorize();
+            return;
+        }
+        if (libraryFile != null) {
+            file=libraryFile;
+            try { readFileInfo(file); }
+            catch (Exception invalid) { finish(invalid instanceof Failure?invalid.getMessage():"Файл из библиотеки недоступен."); return; }
+            if (!storage().edit().putString("source:"+id,file.toString()).commit()) {
+                finish("Не удалось сохранить выбранный файл для синхронизации.");
+                return;
+            }
             authorize();
             return;
         }

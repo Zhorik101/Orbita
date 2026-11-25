@@ -333,12 +333,15 @@ window.orbitaSdoDownloaded=(sourceId,id)=>{
    <button id="sdo-create-file-task" type="button">Создать задачу с файлом</button></div>
    ${tasks.length?`<label class="control-field">Задача <select id="sdo-download-task">${tasks.map((task,i)=>
     `<option value="${i}">${safe(task.text)}</option>`).join('')}</select></label>
-    <button type="button" id="sdo-attach-download">Прикрепить к задаче</button>`:''}`);
+    <button type="button" id="sdo-attach-download">${state.calendarAutoSync?.tasks&&window.OrbitaAndroid?.attachSdoWorkFile?'Прикрепить и синхронизировать':'Прикрепить к задаче'}</button>`:''}`);
  $('#sdo-save-downloads').onclick=()=>window.OrbitaAndroid?.saveSdoToDownloads?.(id);
  $('#sdo-create-file-task').onclick=()=>newSdoTask(item);
  $('#sdo-attach-download')?.addEventListener('click',()=>{
   const task=tasks[Number($('#sdo-download-task').value)];
-  if(task&&setSdoAttachment(task.workId,id)){$('#modal').close();toast('Файл прикреплён к задаче')}
+  if(task&&setSdoAttachment(task.workId,id)){
+   $('#modal').close();toast('Файл прикреплён к задаче');
+   if(state.calendarAutoSync?.tasks)sendSdoFileToCalendar(task,id);
+  }
  });
 };
 
@@ -505,7 +508,7 @@ window.addSdoTaskLinks=(task,anchor)=>{
  const area=document.createElement('section');
  area.className='sdo-task-attachments';
  anchor.before(area);
- area.innerHTML=`<h3>Учебные материалы</h3>
+ area.innerHTML=`${anchor.hasAttribute('data-sdo-files')?'':'<h3>Учебные материалы</h3>'}
   ${items.map(item=>`<div class="sdo-task-item">
    <button type="button" data-open="${item.id}">${safe(item.title)}${item.document&&!sdoDeviceFiles.has(item.id)?' · нет копии':''}</button>
    <button type="button" data-remove="${item.id}" aria-label="Убрать связь">×</button></div>`).join('')}`;
@@ -515,6 +518,39 @@ window.addSdoTaskLinks=(task,anchor)=>{
   button.closest('.sdo-task-item').remove();
   if(!area.querySelector('.sdo-task-item'))area.remove();
  });
+};
+function sendSdoFileToCalendar(task,fileId){
+ if(!task?.dueISO){toast('Файл прикреплён. Для отправки в Календарь укажи срок задачи.');return}
+ window.OrbitaAndroid?.attachSdoWorkFile?.(task.workId,fileId);
+}
+window.addSdoCalendarPicker=(panel,id)=>{
+ syncSdoFiles();
+ const files=state.sdo.items.filter(item=>item.document&&sdoDeviceFiles.has(item.id));
+ if(!files.length)return;
+ const details=document.createElement('details');
+ details.innerHTML='<summary>Из учебных файлов</summary><label class="control-field">Поиск <input type="search"></label><div></div>';
+ const input=details.querySelector('input'), list=details.querySelector('div');
+ const render=()=>{
+  const query=input.value.trim().toLocaleLowerCase('ru');
+  const matching=files.filter(file=>file.title.toLocaleLowerCase('ru').includes(query));
+  list.replaceChildren();
+  for(const file of matching.slice(0,12)){
+   const button=document.createElement('button');
+   button.type='button';button.textContent=file.title;
+   button.onclick=()=>{
+    if(!setSdoAttachment(id,file.id))return;
+    const root=panel.closest('.work-attachments');
+    const anchor=root?.querySelector('[data-sdo-files]');
+    if(anchor){root.querySelector('.sdo-task-attachments')?.remove();window.addSdoTaskLinks({workId:id},anchor)}
+    panel.remove();
+    if(state.calendarAutoSync?.tasks)sendSdoFileToCalendar(state.tasks.find(task=>task.workId===id),file.id);
+    else toast('Файл прикреплён. Для отправки в Календарь включи синхронизацию задач.');
+   };
+   list.append(button);
+  }
+  if(matching.length>12)list.append('Уточни название, чтобы найти нужный файл.');
+ };
+ input.oninput=render;render();panel.append(details);
 };
 window.sdoDisciplinePanel=course=>{
  syncSdoFiles();

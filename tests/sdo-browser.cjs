@@ -17,6 +17,7 @@ const {chromium}=require('playwright');
     read:()=>localStorage.getItem('fixture-profile')||'',
     write:json=>{localStorage.setItem('fixture-profile',json);return true},
     sdoFiles:()=>JSON.stringify(window.deviceFiles),
+    attachSdoWorkFile:(workId,fileId)=>{window.calendarFile={workId,fileId}},
     saveSdoToDownloads:id=>{window.savedDownloadId=id},
     downloadSdoMaterial:(url,id)=>{window.downloadCall={url,id}},
     syncSdoPortal:url=>{window.sdoSyncUrl=url},
@@ -192,6 +193,17 @@ const {chromium}=require('playwright');
   await attachments.getByRole('button',{name:'Убрать связь'}).evaluate(button=>button.click());
   assert.equal(await attachments.count(),0);
   assert(await page.evaluate(id=>state.sdo.items.some(row=>row.id===id),downloaded));
+  await page.evaluate(id=>{
+   const task=state.tasks.find(row=>row.text==='Lab.pdf');
+   task.dueISO='2026-12-01';
+   state.calendarAutoSync={tasks:true};
+   const picker=document.createElement('div');
+   picker.id='sdo-calendar-test';
+   document.body.append(picker);
+   window.addSdoCalendarPicker(picker,task.workId);
+   picker.querySelector('button').click();
+  },downloaded);
+  assert.equal(await page.evaluate(()=>window.calendarFile.fileId),downloaded);
   assert.deepEqual(errors,[]);
   console.log('PASS saved SDO links, manual course structure, task linking, import cancellation, offline bridge, profile and mobile UI');
  }finally{await browser.close()}

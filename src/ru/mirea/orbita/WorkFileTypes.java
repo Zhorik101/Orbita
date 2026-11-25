@@ -8,6 +8,7 @@ import java.util.Map;
 final class WorkFileTypes {
     private static final Map<String,String> TYPES = new LinkedHashMap<>();
     static {
+        add("model/stl", "stl");
         add("application/pdf", "pdf");
         add("application/msword", "doc");
         add("application/vnd.openxmlformats-officedocument.wordprocessingml.document", "docx");
