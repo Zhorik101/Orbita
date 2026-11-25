@@ -120,3 +120,53 @@ body[data-glass]:not([data-glass="off"]) :is(
   .reference-ui #schedule-page .home-toolbar-caption { font-size: 11px; }
   .reference-ui #schedule-page .home-quick-actions button { padding-inline: 6px; }
 }
+
+/* Scroll clearance follows the fixed dock and Android's bottom inset. */
+.reference-ui.unified-ui main {
+  padding-bottom: calc(104px + max(var(--system-bottom),env(safe-area-inset-bottom,0px))) !important;
+  min-width: 0;
+}
+.reference-ui.unified-ui #mini-discipline-page { padding-bottom: 0; }
+.reference-ui.unified-ui .mobile-nav {
+  box-shadow: inset 0 1px 0 var(--glass-highlight), var(--floating-elevation,0 6px 18px #0002) !important;
+}
+.reference-ui.unified-ui .mobile-nav button.active {
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.22);
+}
+@media (prefers-reduced-motion: reduce) {
+  .reference-ui .mobile-nav button, .reference-ui #mini-grid .mini-tile { transition: none !important; }
+}
+.reference-ui .mini-heading { padding-block: 2px 14px; }
+.reference-ui .mini-heading h1 { margin: 6px 0; font-size: clamp(25px,7vw,32px); }
+.reference-ui .mini-heading > p { line-height: 1.5; font-size: 13px; }
+.reference-ui .settings-intro { padding: 0 0 14px; }
+.reference-ui .settings-intro h2 { margin: 0 0 4px; }
+.reference-ui .settings-intro .eyebrow { display: none; }
+.reference-ui .settings-section { padding: 14px !important; margin-bottom: 12px; }
+.reference-ui .settings-section-title { margin-bottom: 7px; padding-bottom: 9px; }
+.reference-ui .settings-section-title h3 { margin: 0 0 3px; }
+.reference-ui .settings-section .settings-link,
+.reference-ui .settings-section .setting-row { min-height: 48px; padding-block: 8px; }
+.reference-ui .settings-section .setting-row small,
+.reference-ui .settings-section .settings-link small { font-size: 12px; line-height: 1.4; }
+.appearance-glass-control { border-top: 1px solid var(--line); margin-top: 12px; }
+.glass-sample {
+  position: relative;
+  height: 34px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--bg);
+}
+.glass-sample i { position: absolute; inset: 7px 12% 7px 5%; border-radius: 9px; background: var(--accent-soft); }
+.glass-sample i:nth-child(2) { inset: 11px 15% 5px 52%; background: var(--accent); }
+.glass-sample span {
+  position: absolute; inset: 4px 24% 4px 24%;
+  border-radius: 8px; border: 1px solid var(--glass-edge);
+  background: var(--glass-chrome);
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+  backdrop-filter: blur(var(--glass-blur));
+}
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .glass-sample span { background: var(--glass-solid); }
+}
