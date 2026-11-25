@@ -10,6 +10,8 @@ function scan(path,html){
   a.getClientRects=()=>a.hidden?[]:[{}];
   Object.defineProperty(a,'innerText',{value:a.textContent});
  }
+ for(const intro of dom.window.document.querySelectorAll('#intro'))
+  Object.defineProperty(intro,'innerText',{value:intro.textContent});
  for(const heading of dom.window.document.querySelectorAll('h3'))
   Object.defineProperty(heading,'innerText',{value:heading.textContent});
  const links=JSON.parse(JSON.stringify(dom.window.eval(script)));
@@ -37,4 +39,6 @@ assert.deepEqual(homework,[{url:'https://online-edu.mirea.ru/pluginfile.php/13/m
 const folder=scan('/mod/folder/view.php?id=12','<div role="main">Пустая область</div>'+
  '<div class="foldertree"><a hidden href="/pluginfile.php/32/mod_folder/content/0/L1.pdf?forcedownload=1">Л1.pdf</a></div>');
 assert.deepEqual(folder,[{url:'https://online-edu.mirea.ru/pluginfile.php/32/mod_folder/content/0/L1.pdf',title:'Л1.pdf',section:''}]);
+const assignment=scan('/mod/assign/view.php?id=8','<main><div id="intro">Изучи методичку</div></main>');
+assert.deepEqual(assignment,[{description:'Изучи методичку'}]);
 console.log('PASS visible course links, section titles, duplicate and secret stripping in portal DOM fixture');
