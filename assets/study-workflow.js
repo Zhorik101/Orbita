@@ -295,11 +295,12 @@ function selectedAttendanceSubgroup(){
  return /^\d{1,2}$/.test(value||'')?String(Number(value)):'';
 }
 function attendanceForSubgroup(rows,subgroup){
- return subgroup?rows.filter(row=>!row.subgroup||row.subgroup===subgroup):rows;
+ return rows.filter(row=>row.variantVisible!==false&&(!subgroup||!row.subgroup||row.subgroup===subgroup));
 }
 function attendanceSubgroupNotice(rows,subgroup){
- if(!subgroup)return '';
- const unknown=rows.filter(row=>!row.subgroup).length;
+ const variant=rows.some(row=>row.variantVisible===true);
+ if(!subgroup)return variant?'<p>Учтён выбранный вариант пары из настроек подгруппы.</p>':'';
+ const unknown=rows.filter(row=>!row.subgroup&&!row.variantVisible).length;
  return `<p>Подгруппа ${subgroup}${unknown?' · записей без подгруппы: '+unknown:''}</p>`;
 }
 function attendanceLessonDetails(rows,name){
@@ -311,15 +312,21 @@ function attendanceLessonDetails(rows,name){
   byMinute.set(minute,(byMinute.get(minute)||0)+1);
  }
  const days=new Map(),subject=subjectKey(name);
+ const variants=state.lessonVariants?.[calendarKey(target)];
  return rows.map(row=>{
-  if(row.teacher&&row.subgroup||byMinute.get(Math.floor(row.start/60))!==1)return row;
+  if(!row.teacher&&byMinute.get(Math.floor(row.start/60))!==1)return row;
   const {date,time}=moscowParts(new Date(row.start*1000));
   if(!days.has(date))days.set(date,officialUnfilteredLessons(target,new Date(date+'T12:00:00')));
   const candidates=days.get(date).filter(lesson=>subjectKey(lesson.title)===subject&&lesson.start===time
    &&(!row.subgroup||!lesson.subgroup||row.subgroup===lesson.subgroup));
-  if(candidates.length!==1)return row;
-  const [lesson]=candidates;
-  return {...row,teacher:row.teacher||lesson.teacher,subgroup:row.subgroup||lesson.subgroup};
+  const matches=row.teacher?candidates.filter(lesson=>subjectKey(lesson.teacher||'')===subjectKey(row.teacher)):candidates;
+  if(matches.length!==1)return row;
+  const [lesson]=matches;
+  const selected=variants?.[lessonVariantKey(lesson)];
+  const parallel=selected&&parallelLessonSets(candidates).find(group=>group.includes(lesson)&&
+   group.some(other=>lessonVariantId(other)===selected));
+  return {...row,teacher:row.teacher||lesson.teacher,subgroup:row.subgroup||lesson.subgroup,
+   variantVisible:parallel?lessonVariantId(lesson)===selected:undefined};
  });
 }
 function attendanceRowsHtml(rows,filter){
@@ -329,7 +336,7 @@ function attendanceRowsHtml(rows,filter){
  if(!visible.length)return rows.length?'<p>По этому фильтру отметок нет.</p>':'';
  return `<div class="attendance-rows">${visible.map(row=>{
   const [label,kind]=attendanceTypes[row.type]||['Статус неизвестен','unknown'];
-  const subgroup=row.subgroup?(row.subgroup===own?'Моя подгруппа ':'Подгруппа ')+row.subgroup:'Подгруппа не указана';
+  const subgroup=row.subgroup?(row.subgroup===own?'Моя подгруппа ':'Подгруппа ')+row.subgroup:row.variantVisible?'Мой вариант пары':'Подгруппа не указана';
   return `<div class="attendance-row ${kind}"><div class="attendance-lesson">
    <time>${lessonDateFormat.format(row.start*1000)}</time>
    <small>${safe(row.teacher||'Преподаватель не указан')}</small><small>${safe(subgroup)}</small>

@@ -70,6 +70,21 @@ const {chromium}=require('playwright');
    return [unique.teacher,unique.subgroup,paired.teacher,ambiguous.teacher];
   });
   assert.deepEqual(results,['Миронов Иван','2',undefined,undefined]);
+  const selectedVariant=await page.evaluate(()=>{
+   const original=officialUnfilteredLessons;
+   const date='2026-11-10',start=Date.parse(date+'T09:00:00+03:00')/1000;
+   const first={date,start:'09:00',title:'Философия',type:'Практическое занятие',teacher:'Иванова Анна'};
+   const second={...first,teacher:'Миронов Иван'};
+   state.lessonVariants={[calendarKey(state.officialGroup)]:{[lessonVariantKey(first)]:lessonVariantId(first)}};
+   officialUnfilteredLessons=()=>[first,second];
+   const matched=attendanceLessonDetails([
+    {start,type:3,teacher:first.teacher},{start,type:1,teacher:second.teacher},{start,type:0,teacher:''}
+   ],'Философия');
+   const filtered=attendanceForSubgroup(matched,'');
+   officialUnfilteredLessons=original;
+   return [filtered.map(row=>row.type),filtered[0].variantVisible,filtered[1].variantVisible];
+  });
+  assert.deepEqual(selectedVariant,[[3,0],true,undefined]);
   assert.doesNotMatch(await history.innerText(),/Подгруппа 2/);
   assert.equal(await page.evaluate(()=>window.dayQueries.length),2);
   await page.locator('#attendance-refresh-days').click();
