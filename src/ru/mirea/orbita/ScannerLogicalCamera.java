@@ -30,6 +30,7 @@ final class ScannerLogicalCamera {
     final Range<Float> range;
     final int orientation;
     final Size frameSize;
+    private final Integer focusMode;
     private final Handler handler = new Handler(Looper.getMainLooper());
     private CameraDevice device;
     private CameraCaptureSession session;
@@ -40,12 +41,13 @@ final class ScannerLogicalCamera {
     private long lastFrame;
     private float zoom = 1;
 
-    private ScannerLogicalCamera(CameraManager manager, String id, Range<Float> range, int orientation, Size size) {
+    private ScannerLogicalCamera(CameraManager manager, String id, Range<Float> range, int orientation, Size size, Integer focusMode) {
         this.manager = manager;
         this.id = id;
         this.range = range;
         this.orientation = orientation;
         frameSize = size;
+        this.focusMode = focusMode;
     }
 
     static ScannerLogicalCamera find(Context context) {
@@ -67,13 +69,25 @@ final class ScannerLogicalCamera {
                 for (Size candidate : yuvSizes) {
                     if (candidate.getWidth() * candidate.getHeight() > 1280 * 960
                         || !Arrays.asList(displaySizes).contains(candidate)) continue;
-                    if (size == null || Math.abs(candidate.getWidth() * candidate.getHeight() - 640 * 480)
-                        < Math.abs(size.getWidth() * size.getHeight() - 640 * 480)) size = candidate;
+                    // Keep preview and decoder on the same aspect ratio and favor detail over VGA.
+                    if (size == null || candidate.getWidth() * candidate.getHeight()
+                        > size.getWidth() * size.getHeight()) size = candidate;
                 }
-                if (size != null) return new ScannerLogicalCamera(manager, id, range, orientation, size);
+                if (size != null) return new ScannerLogicalCamera(manager, id, range, orientation, size,
+                    continuousFocusMode(camera.get(CameraCharacteristics.CONTROL_AF_AVAILABLE_MODES)));
             }
         } catch (Exception ignored) {}
         return null;
+    }
+
+    private static Integer continuousFocusMode(int[] modes) {
+        if (modes == null) return null;
+        Integer videoMode = null;
+        for (int mode : modes) {
+            if (mode == CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE) return mode;
+            if (mode == CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_VIDEO) videoMode = mode;
+        }
+        return videoMode;
     }
 
     @SuppressLint("MissingPermission")
@@ -109,6 +123,7 @@ final class ScannerLogicalCamera {
                     device = camera;
                     try {
                         request = camera.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW);
+                        if (focusMode != null) request.set(CaptureRequest.CONTROL_AF_MODE, focusMode);
                         request.addTarget(display);
                         request.addTarget(reader.getSurface());
                         camera.createCaptureSession(Arrays.asList(display, reader.getSurface()), new CameraCaptureSession.StateCallback() {
