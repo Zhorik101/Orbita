@@ -211,17 +211,38 @@ function refreshCourseGradesIfNeeded(){
   loadCourseGrades();
  }
 }
+const mireaReplyTimeouts=new Map();
+function requestMireaReply(key, invoke, finish){
+ const timeout=setTimeout(()=>finish({error:'timeout'}),25000);
+ mireaReplyTimeouts.set(key,timeout);
+ try{invoke()}catch{finish({error:'network'})}
+}
+function takeMireaReply(key){
+ if(!mireaReplyTimeouts.has(key))return false;
+ clearTimeout(mireaReplyTimeouts.get(key));
+ mireaReplyTimeouts.delete(key);
+ return true;
+}
+function resetAttendanceRequests(){
+ attendanceByCourse.clear();
+ attendanceRequests.clear();
+ dailyAttendance.clear();
+ dailyAttendanceRequests.clear();
+ for(const key of mireaReplyTimeouts.keys())if(!key.startsWith('grades:'))takeMireaReply(key);
+}
 function loadCourseGrades(){
  if(!window.OrbitaAndroid?.loadMireaGrades||courseGradesLoading)return;
  courseGradesLoading=true;
  courseGradeRefreshError=false;
  if(page==='mini-courses')paintCourseTools();
- window.OrbitaAndroid.loadMireaGrades(++courseGradeRequest);
+ const request=++courseGradeRequest;
+ requestMireaReply('grades:'+request,()=>window.OrbitaAndroid.loadMireaGrades(request),
+  result=>window.orbitaMireaGrades(request,result));
 }
 window.orbitaMireaGrades=(request,result)=>{
- if(request!==courseGradeRequest)return;
+ if(request!==courseGradeRequest||!takeMireaReply('grades:'+request))return;
  courseGradesLoading=false;
- if(result.error==='network'&&Array.isArray(courseGradeResult?.courses)){
+ if((result.error==='network'||result.error==='timeout')&&Array.isArray(courseGradeResult?.courses)){
   courseGradeRefreshError=true;
  }else{
   courseGradeResult=result;
@@ -230,14 +251,12 @@ window.orbitaMireaGrades=(request,result)=>{
  if(page==='pairs')renderPairs();
 };
 window.orbitaRefreshMireaGrades=()=>{
+ takeMireaReply('grades:'+courseGradeRequest);
  ++courseGradeRequest;
  courseGradesLoading=false;
  courseGradeResult=readCachedCourseGrades();
  courseGradeRefreshError=false;
- attendanceByCourse.clear();
- attendanceRequests.clear();
- dailyAttendance.clear();
- dailyAttendanceRequests.clear();
+ resetAttendanceRequests();
  if(window.OrbitaAndroid?.cachedMireaGrades||page==='mini-courses'||page==='pairs')loadCourseGrades();
 };
 const attendanceByCourse=new Map(),attendanceRequests=new Map();
@@ -249,11 +268,12 @@ function requestCourseAttendance(id){
  attendanceByCourse.set(id,null);
  const request=++attendanceRequestId;
  attendanceRequests.set(request,id);
- window.OrbitaAndroid.loadMireaAttendance(request,id);
+ requestMireaReply('course:'+request,()=>window.OrbitaAndroid.loadMireaAttendance(request,id),
+  result=>window.orbitaMireaAttendance(request,result));
 }
 window.orbitaMireaAttendance=(request,result)=>{
  const id=attendanceRequests.get(request);
- if(!id)return;
+ if(!id||!takeMireaReply('course:'+request))return;
  attendanceRequests.delete(request);
  attendanceByCourse.set(id,result);
  if(page==='mini-courses'&&[...$$('[data-sport-attendance]')].some(node=>node.dataset.sportAttendance===id))paintCourseTools();
@@ -264,7 +284,7 @@ function paintAttendanceDialog(){
  const box=$('#course-attendance-content'),id=attendanceDialog.id,info=attendanceByCourse.get(id);
  if(!info){box.textContent='Загружаем посещения…';return}
  if(info.error){
-  box.innerHTML='<p>'+ (info.error==='login'?'Войди в МИРЭА, чтобы посмотреть посещения.':'Не удалось загрузить посещения.')+'</p><button type="button" class="primary" id="retry-course-attendance">'+(info.error==='login'?'Войти':'Повторить')+'</button>';
+  box.innerHTML='<p>'+ (info.error==='login'?'Войди в МИРЭА, чтобы посмотреть посещения.':info.error==='timeout'?'МИРЭА не ответила вовремя.':'Не удалось загрузить посещения.')+'</p><button type="button" class="primary" id="retry-course-attendance">'+(info.error==='login'?'Войти':'Повторить')+'</button>';
   $('#retry-course-attendance').onclick=()=>{
    if(info.error==='login'){openPulseGrades(true);$('#modal').close();return}
    attendanceByCourse.delete(id);requestCourseAttendance(id);paintAttendanceDialog();
@@ -301,11 +321,12 @@ function requestDailyAttendance(date){
  if(dailyAttendance.size>14)dailyAttendance.delete(dailyAttendance.keys().next().value);
  const request=++dailyAttendanceRequest;
  dailyAttendanceRequests.set(request,key);
- window.OrbitaAndroid.loadMireaDailyMarks(request,key);
+ requestMireaReply('day:'+request,()=>window.OrbitaAndroid.loadMireaDailyMarks(request,key),
+  result=>window.orbitaMireaDailyMarks(request,result));
 }
 window.orbitaMireaDailyMarks=(request,result)=>{
  const key=dailyAttendanceRequests.get(request);
- if(!key)return;
+ if(!key||!takeMireaReply('day:'+request))return;
  dailyAttendanceRequests.delete(request);
  dailyAttendance.set(key,result);
  if(page==='pairs'&&dateKey(pairsDate)===key)renderPairs();
@@ -317,7 +338,8 @@ function lessonAttendance(lesson,date,request=false){
  const key=subjectKey(shortSubject(lesson.title));
  const sameSubject=name=>subjectKey(shortSubject(name))===key;
  const scheduleMatches=pairsData(date).filter(other=>other.start===lesson.start&&sameSubject(other.title));
- if(scheduleMatches.length!==1)return null;
+ const variants=new Set(scheduleMatches.map(other=>JSON.stringify([other.type,other.teacher,other.room,other.end])));
+ if(variants.size!==1)return null;
  const dayKey=dateKey(date);
  if(request)requestDailyAttendance(date);
  const direct=dailyAttendance.get(dayKey);
@@ -330,8 +352,9 @@ function lessonAttendance(lesson,date,request=false){
   if(request)requestCourseAttendance(ids[0]);
   matches=attendanceByCourse.get(ids[0])?.entries?.filter(sameTime)||[];
  }
- if(matches.length!==1||!attendanceTypes[matches[0].type])return null;
- const type=matches[0].type,[text,kind]=attendanceTypes[type];
+ const statuses=[...new Set(matches.map(mark=>mark.type).filter(type=>attendanceTypes[type]))];
+ if(statuses.length!==1)return null;
+ const [type]=statuses,[text,kind]=attendanceTypes[type];
  return {type,text,kind};
 }
 const pairCardBeforeAttendance=pairCard;
@@ -365,10 +388,7 @@ renderPairs=function(){
 
 };
 window.orbitaRefreshAttendance=()=>{
- attendanceByCourse.clear();
- attendanceRequests.clear();
- dailyAttendance.clear();
- dailyAttendanceRequests.clear();
+ resetAttendanceRequests();
  if(page==='pairs')renderPairs();
  if(page==='mini-courses')paintCourseTools();
 };
@@ -428,7 +448,7 @@ function paintCourseTools(){
  semester.innerHTML=terms.map(term=>`<option value="${term}">${term} семестр</option>`).join('');
  if(selectedGradeTerm!==null)semester.value=String(selectedGradeTerm);
  semester.onchange=()=>{selectedGradeTerm=Number(semester.value);paintCourseTools()};
- status.textContent=!available?'БРС доступна в приложении Android':courseGradesLoading&&!hasSavedScores?'Загружаем БРС…':login?'Войди в МИРЭА для просмотра баллов':result?.error?'Не удалось загрузить баллы':terms.length>1?'Баллы БРС':result?.term?`${result.term} семестр`:result?.courses?.length?'Баллы БРС':result?'МИРЭА пока не вернула баллы':'Баллы БРС';
+ status.textContent=!available?'БРС доступна в приложении Android':courseGradesLoading&&!hasSavedScores?'Загружаем БРС…':login?'Войди в МИРЭА для просмотра баллов':result?.error==='timeout'?'МИРЭА не ответила вовремя':result?.error?'Не удалось загрузить баллы':terms.length>1?'Баллы БРС':result?.term?`${result.term} семестр`:result?.courses?.length?'Баллы БРС':result?'МИРЭА пока не вернула баллы':'Баллы БРС';
  action.hidden=!available||courseGradesLoading;
  action.textContent=login?'Войти':result?.error||courseGradeRefreshError?'Повторить':'Обновить';
  action.onclick=login?()=>openPulseGrades(true):loadCourseGrades;
