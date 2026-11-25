@@ -5,6 +5,21 @@ const disciplinePage=createMiniPage('mini-discipline',`
  <div id="discipline-overview"></div>`);
 let openedDiscipline=null;
 let disciplineScheduleRequest=null;
+let disciplineTab='overview';
+const disciplineTabs=[['overview','Обзор'],['schedule','Пары'],['work','Работы'],['materials','Материалы']];
+function disciplinePane(key,body){
+ return `<div role="tabpanel" id="discipline-pane-${key}" aria-labelledby="discipline-tab-${key}"${key===disciplineTab?'':' hidden'}>${body}</div>`;
+}
+function selectDisciplineTab(key){
+ disciplineTab=key;
+ for(const [tab] of disciplineTabs){
+  const active=tab===key;
+  const button=$('#discipline-tab-'+tab);
+  button.setAttribute('aria-selected',String(active));
+  button.tabIndex=active?0:-1;
+  $('#discipline-pane-'+tab).hidden=!active;
+ }
+}
 const disciplineTimestamp=new Intl.DateTimeFormat('ru',{dateStyle:'short',timeStyle:'short'});
 window.disciplineUpdated=updated=>Number.isFinite(updated)&&updated>0
  ?'Обновлено '+disciplineTimestamp.format(updated):'';
@@ -23,6 +38,7 @@ function disciplineSchedule(days=14){
 window.scheduledDisciplines=()=>[...new Set(disciplineSchedule().map(({lesson})=>lesson.title))];
 window.openDiscipline=(name,score)=>{
  openedDiscipline={name,id:score?.id,term:score?.term??null};
+ disciplineTab='overview';
  showPage('mini-discipline');
 
 };
@@ -78,22 +94,39 @@ function paintDiscipline(){
   :!group?'Сначала выбери свою группу.':disciplineScheduleRequest||(!scheduleCache?'Расписание ещё не загружено.':'Пар по этому предмету на ближайшие 14 дней нет.');
  const slotRows=upcoming.map(({date,lesson},index)=>`<li><button type="button" data-discipline-lesson="${index}">${safe(date.toLocaleDateString('ru',{day:'numeric',month:'long'}))} · ${safe(lesson.start)}</button>
   <small>${[lesson.type,lesson.subgroup?'Подгруппа '+lesson.subgroup:'',lesson.room,lesson.campus,lesson.teacher].filter(Boolean).map(safe).join(' · ')}</small></li>`).join('');
- $('#discipline-overview').innerHTML=
-  disciplinePanel('Баллы БРС',`<p role="status">${safe(gradesStatus)}</p>
+ const focusedTab=document.activeElement?.dataset.disciplineTab;
+ $('#discipline-overview').innerHTML=`<div class="discipline-tabs" role="tablist" aria-label="Разделы дисциплины">
+  ${disciplineTabs.map(([key,label])=>`<button id="discipline-tab-${key}" type="button" role="tab"
+   aria-controls="discipline-pane-${key}" data-discipline-tab="${key}">${label}</button>`).join('')}</div>`
+  +disciplinePane('overview',disciplinePanel('Баллы БРС',`<p role="status">${safe(gradesStatus)}</p>
    ${score?courseScoreHtml(score):`<p>${courseGradesLoading?'Загружаем баллы…':result?.error==='login'?'Войди в МИРЭА для просмотра баллов.':result?.error?'Не удалось загрузить баллы.':'Баллы по этому предмету недоступны.'}</p>`}
    ${window.OrbitaAndroid?.loadMireaGrades&&!courseGradesLoading?`<button type="button" data-discipline-action="grades">${result?.error==='login'?'Войти':'Обновить БРС'}</button>`:''}`)
   +disciplinePanel('Посещаемость по дисциплине',`<p role="status">${safe(attendanceStatus)}</p><p>${safe(window.disciplineUpdated(attendance?.updated))}</p>
    ${score?.id&&window.OrbitaAndroid?.loadMireaAttendance?`<button type="button" data-discipline-action="attendance">${attendance?.error?'Повторить':'История посещений'}</button>`:''}`)
-  +disciplinePanel('Предстоящие пары',`${slotRows?`<ul>${slotRows}</ul>`:''}
+  )+disciplinePane('schedule',disciplinePanel('Предстоящие пары',`${slotRows?`<ul>${slotRows}</ul>`:''}
    <p role="status">${safe(upcoming.length?disciplineScheduleRequest||'':scheduleStatus)}</p>
    <p>${safe(window.disciplineUpdated(scheduleCache?.updated))}</p>
    ${activeTerm&&group?`<button type="button" data-discipline-action="schedule"${disciplineScheduleRequest==='Обновляем расписание…'?' disabled':''}>Обновить расписание</button>`:''}`)
-  +disciplinePanel('Личные задания',`<button type="button" data-discipline-action="add">+ Работа</button>
+  )+disciplinePane('work',disciplinePanel('Личные задания',`<button type="button" data-discipline-action="add">+ Работа</button>
    ${pending.length?`<ul>${disciplineTaskList(pending)}</ul>`:'<p>Открытых заданий нет.</p>'}`)
   +disciplinePanel('Командные задания','<p>В общих работах предмет хранится в описании. Открой команду, чтобы посмотреть список.</p><button type="button" data-discipline-action="teams">Открыть команды</button>')
-  +disciplinePanel('Учебные материалы','<button type="button" data-discipline-action="sdo">Открыть СДО МИРЭА ↗</button><p>Файлы, прикреплённые к личным заданиям, доступны в этих заданиях.</p>')
-  +disciplinePanel('История результатов',`<p>Выполненные личные задания</p>${completed.length?`<ul>${disciplineTaskList(completed,true)}</ul>`:'<p>Выполненных заданий пока нет.</p>'}<p>В БРС доступна текущая сводка баллов.</p>`);
+  +disciplinePanel('История результатов',`<p>Выполненные личные задания</p>${completed.length?`<ul>${disciplineTaskList(completed,true)}</ul>`:'<p>Выполненных заданий пока нет.</p>'}<p>В БРС доступна текущая сводка баллов.</p>`))
+  +disciplinePane('materials',disciplinePanel('Учебные материалы',
+   '<button type="button" data-discipline-action="sdo">Открыть СДО МИРЭА ↗</button><p>Вложения доступны в личных заданиях.</p>'));
  const overview=$('#discipline-overview');
+ selectDisciplineTab(disciplineTab);
+ if(focusedTab)$('#discipline-tab-'+focusedTab)?.focus({preventScroll:true});
+ overview.querySelectorAll('[data-discipline-tab]').forEach((button,index)=>{
+  button.onclick=()=>selectDisciplineTab(button.dataset.disciplineTab);
+  button.onkeydown=event=>{
+   const step={ArrowLeft:-1,ArrowRight:1}[event.key];
+   if(step===undefined)return;
+   event.preventDefault();
+   const [key]=disciplineTabs[(index+step+disciplineTabs.length)%disciplineTabs.length];
+   selectDisciplineTab(key);
+   $('#discipline-tab-'+key).focus();
+  };
+ });
  const scoreHistory=overview.querySelector('.course-attendance-link');
  if(scoreHistory)scoreHistory.remove();
  const actions={

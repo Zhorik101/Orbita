@@ -170,3 +170,61 @@ body[data-glass]:not([data-glass="off"]) :is(
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
   .glass-sample span { background: var(--glass-solid); }
 }
+
+/* Course panels share one tab strip. The original actions stay inside their respective panels. */
+.discipline-tabs {
+  display: grid;
+  grid-template-columns: repeat(4,minmax(0,1fr));
+  gap: 3px;
+  padding: 4px;
+  margin: 0 0 12px;
+  border: 1px solid var(--glass-edge,var(--line));
+  border-radius: 15px;
+  background: var(--glass-solid,var(--panel));
+}
+.discipline-tabs button {
+  min-height: 44px;
+  padding-inline: 3px;
+  border-radius: 11px;
+  font-size: clamp(11px,3.2vw,14px);
+  color: var(--glass-text,var(--text));
+}
+.discipline-tabs button[aria-selected="true"] {
+  background: var(--accent);
+  color: var(--on-accent);
+  font-weight: 600;
+}
+#discipline-overview [role="tabpanel"][hidden] { display: none; }
+.reference-ui .course-discipline, .reference-ui .mini-note, .reference-ui .team-panel {
+  border-radius: 19px;
+  padding: 13px 14px;
+}
+.reference-ui .discipline-panel :is(p,li) { font-size: 14px; }
+.reference-ui .discipline-panel small { font-size: 12px; }
+.reference-ui .pairs-search-row { gap: 8px; }
+.reference-ui .pair-card { gap: 10px; }
+.reference-ui .pair-card :is(.pair-teacher,.pair-meta) { font-size: 12px; line-height: 1.45; }
+.reference-ui .pair-content h3 { font-size: 15px; line-height: 1.3; overflow-wrap: anywhere; }
+.reference-ui .mini-note :is(p,small), .reference-ui .team-panel p { line-height: 1.5; }
+.reference-ui .work-task-row .edit-work b { font-size: 14px !important; }
+.reference-ui .work-task-row .edit-work p { font-size: 12px !important; }
+.reference-ui .calendar-destinations button { min-height: 44px; }
+.reference-ui .unified-dialog-heading { padding: 19px 53px 16px 19px; }
+.reference-ui .unified-dialog-heading h2 { font-size: 22px !important; }
+.reference-ui .unified-dialog-body { padding: 16px 19px 20px; }
+.reference-ui .attendance-row { font-size: 14px; }
+.reference-ui #modal {
+  max-height: calc(100dvh - 24px - var(--system-top) - var(--system-bottom));
+  overscroll-behavior: contain;
+}
+.reference-ui.keyboard-open #modal { max-height: 75dvh; }
+
+@media (max-width: 393px) {
+  .reference-ui .pairs-heading { align-items: center; gap: 8px; }
+  .reference-ui .pairs-heading > :first-child { min-width: 0; }
+  .reference-ui .pairs-heading h1 { font-size: clamp(28px,9vw,37px); }
+  .reference-ui .pairs-heading-actions { min-width: 0; gap: 6px; }
+  .reference-ui .pairs-heading .pairs-group { min-width: 0; padding-inline: 10px; gap: 6px; }
+  .reference-ui .pairs-heading .pairs-group b { max-width: clamp(60px,24vw,105px); }
+  .reference-ui .pairs-heading-actions .round-control { flex: 0 0 44px; width: 44px; height: 44px; }
+}
