@@ -30,12 +30,22 @@ final class SdoMaterials {
     private static final int IMPORT = 760, EXPORT = 761;
     private static final long FILE_LIMIT = 100L * 1024 * 1024;
     private static final long LIBRARY_LIMIT = 500L * 1024 * 1024;
-    private static final Map<String, String> TYPES = Map.of(
-        "pdf", "application/pdf", "docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        "pptx", "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-        "xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        "txt", "text/plain", "zip", "application/zip", "rar", "application/vnd.rar",
-        "7z", "application/x-7z-compressed", "doc", "application/msword", "ppt", "application/vnd.ms-powerpoint");
+    private static final Map<String, String> TYPES = new java.util.LinkedHashMap<>();
+    static {
+        TYPES.put("pdf", "application/pdf");
+        TYPES.put("docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
+        TYPES.put("pptx", "application/vnd.openxmlformats-officedocument.presentationml.presentation");
+        TYPES.put("xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+        TYPES.put("txt", "text/plain");
+        TYPES.put("zip", "application/zip");
+        TYPES.put("rar", "application/vnd.rar");
+        TYPES.put("7z", "application/x-7z-compressed");
+        TYPES.put("doc", "application/msword");
+        TYPES.put("ppt", "application/vnd.ms-powerpoint");
+    }
+    private static final class ImportFailure extends IOException {
+        ImportFailure(String message) { super(message); }
+    }
     private static final ExecutorService IO = Executors.newSingleThreadExecutor();
     private final Activity activity;
     private final SharedPreferences store;
@@ -118,15 +128,23 @@ final class SdoMaterials {
         }
     }
 
-    void remove(String id) {
+    void remove(String payload) {
+        if (payload == null || payload.length() > 34000) return;
         IO.execute(() -> {
-            var item = file(id, metadata(id));
-            if (item == null || (item.exists() && !item.delete())) {
-                finish("Не удалось удалить локальную копию.", new JSONArray());
-                return;
-            }
-            store.edit().remove(id).commit();
-            finish("Локальная копия удалена.", new JSONArray());
+            try {
+                JSONArray ids = new JSONArray(payload);
+                if (ids.length() > 500) return;
+                int removed = 0, failed = 0;
+                for (int i = 0; i < ids.length(); i++) {
+                    String id = ids.optString(i);
+                    if (!id.matches("[a-f0-9]{64}")) continue;
+                    var item = file(id, metadata(id));
+                    if (item == null || (item.exists() && !item.delete())) { failed++; continue; }
+                    if (store.edit().remove(id).commit()) removed++;
+                    else failed++;
+                }
+                finish("Удалено локальных копий: " + removed + (failed > 0 ? ". Ошибок: " + failed : "."), new JSONArray());
+            } catch (Exception error) { finish("Не удалось удалить локальные копии.", new JSONArray()); }
         });
     }
 
@@ -136,7 +154,10 @@ final class SdoMaterials {
         if (request != IMPORT && request != EXPORT) return false;
         String source = exporting;
         if (request == EXPORT) exporting = "";
-        if (result != Activity.RESULT_OK || data == null) return true;
+        if (result != Activity.RESULT_OK || data == null) {
+            if (request == IMPORT) finish("", new JSONArray());
+            return true;
+        }
         var selected = new ArrayList<Uri>();
         ClipData items = data.getClipData();
         if (request == IMPORT && items != null) {
@@ -183,9 +204,9 @@ final class SdoMaterials {
             if (cancelled) break;
             progress(++index, selected.size());
             try { accepted.put(importOne(uri)); }
-            catch (IOException error) {
-                if (!cancelled) { failed++; if (firstError.isEmpty()) firstError = error.getMessage() == null ? "" : error.getMessage(); }
-            } catch (Exception error) { failed++; }
+            catch (ImportFailure error) {
+                if (!cancelled) { failed++; if (firstError.isEmpty()) firstError = error.getMessage(); }
+            } catch (Exception error) { if (!cancelled) failed++; }
         }
         finish((cancelled ? "Импорт отменён. " : "") + "Доступно в библиотеке: " + accepted.length() + "."
             + (failed > 0 ? " Ошибок: " + failed + ". " + firstError : ""), accepted);
@@ -201,22 +222,22 @@ final class SdoMaterials {
                 if (!cursor.isNull(1)) expected = cursor.getLong(1);
             }
         }
-        if (name == null) throw new IOException("У файла нет названия.");
+        if (name == null) throw new ImportFailure("У файла нет названия.");
         name = name.replaceAll("[/\\\\\\p{Cntrl}]", "_").trim();
         int dot = name.lastIndexOf('.');
         String extension = dot > 0 ? name.substring(dot + 1).toLowerCase(Locale.ROOT) : "";
-        if (!TYPES.containsKey(extension)) throw new IOException("Формат файла не поддерживается.");
+        if (!TYPES.containsKey(extension)) throw new ImportFailure("Формат файла не поддерживается.");
         if (name.length() > 160) name = name.substring(0, Math.min(dot, 150)) + "." + extension;
-        if (expected > FILE_LIMIT) throw new IOException("Один файл может занимать до 100 МБ.");
-        if (!root.isDirectory() && !root.mkdirs()) throw new IOException("Библиотека недоступна.");
-        if (root.getUsableSpace() < Math.max(expected, 0) + 8L * 1024 * 1024) throw new IOException("На устройстве не хватает места.");
+        if (expected > FILE_LIMIT) throw new ImportFailure("Один файл может занимать до 100 МБ.");
+        if (!root.isDirectory() && !root.mkdirs()) throw new ImportFailure("Библиотека недоступна.");
+        if (root.getUsableSpace() < Math.max(expected, 0) + 8L * 1024 * 1024) throw new ImportFailure("На устройстве не хватает места.");
         var temp = File.createTempFile("incoming-", ".part", root);
         try {
             var digest = MessageDigest.getInstance("SHA-256");
             long size;
             try (var in = activity.getContentResolver().openInputStream(uri); var out = new FileOutputStream(temp)) {
                 size = copy(in, out, digest);
-                if (size <= 0 || expected >= 0 && size != expected) throw new IOException("Файл пуст или прочитан не полностью.");
+                if (size <= 0 || expected >= 0 && size != expected) throw new ImportFailure("Файл пуст или прочитан не полностью.");
                 out.getFD().sync();
             }
             var hash = new StringBuilder();
@@ -227,14 +248,14 @@ final class SdoMaterials {
             long used = 0;
             var stored = root.listFiles((dir, filename) -> !filename.endsWith(".part"));
             if (stored != null) for (File item : stored) used += item.length();
-            if (used + size > LIBRARY_LIMIT) throw new IOException("Лимит библиотеки — 500 МБ.");
+            if (used + size > LIBRARY_LIMIT) throw new ImportFailure("Лимит библиотеки — 500 МБ.");
             var details = new JSONObject().put("id", id).put("name", name).put("extension", extension)
                 .put("size", size).put("updated", System.currentTimeMillis());
             var item = file(id, details);
-            if (item == null || !temp.renameTo(item)) throw new IOException("Не удалось сохранить копию.");
+            if (item == null || !temp.renameTo(item)) throw new ImportFailure("Не удалось сохранить копию.");
             if (!store.edit().putString(id, details.toString()).commit()) {
                 item.delete();
-                throw new IOException("Не удалось сохранить запись библиотеки.");
+                throw new ImportFailure("Не удалось сохранить запись библиотеки.");
             }
             return id;
         } finally { temp.delete(); }
@@ -248,7 +269,7 @@ final class SdoMaterials {
         while ((read = in.read(buffer)) != -1) {
             if (cancelled) throw new IOException();
             size += read;
-            if (size > FILE_LIMIT) throw new IOException("Один файл может занимать до 100 МБ.");
+            if (size > FILE_LIMIT) throw new ImportFailure("Один файл может занимать до 100 МБ.");
             if (digest != null) digest.update(buffer, 0, read);
             out.write(buffer, 0, read);
         }

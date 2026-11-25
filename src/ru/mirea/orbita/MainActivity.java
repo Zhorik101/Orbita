@@ -197,7 +197,7 @@ public class MainActivity extends Activity {
         @JavascriptInterface public void cancelSdoImport() { sdoMaterials.cancel(); }
         @JavascriptInterface public void openSdoFile(String id) { if (validSdoId(id)) runOnUiThread(() -> sdoMaterials.open(id)); }
         @JavascriptInterface public void exportSdoFile(String id) { if (validSdoId(id)) runOnUiThread(() -> sdoMaterials.export(id)); }
-        @JavascriptInterface public void deleteSdoFile(String id) { if (validSdoId(id)) sdoMaterials.remove(id); }
+        @JavascriptInterface public void deleteSdoFiles(String payload) { sdoMaterials.remove(payload); }
         private boolean validSdoId(String id) { return id != null && id.matches("[a-f0-9]{64}"); }
 
         @JavascriptInterface public void syncCalendarPairs(String payload) { CalendarSync.pairs(MainActivity.this, payload); }
