@@ -289,13 +289,26 @@ window.orbitaMireaAttendance=(request,result)=>{
  if(attendanceDialog?.id===id&&$('#course-attendance-content')&&$('#modal').open)paintAttendanceDialog();
  if(page==='pairs')renderPairs();
 };
+function selectedAttendanceSubgroup(){
+ const group=state.pinnedGroup||state.officialGroup;
+ const value=state.subgroups?.[calendarKey(group)];
+ return /^\d{1,2}$/.test(value||'')?String(Number(value)):'';
+}
+function attendanceForSubgroup(rows,subgroup){
+ return subgroup?rows.filter(row=>!row.subgroup||row.subgroup===subgroup):rows;
+}
+function attendanceSubgroupNotice(rows,subgroup){
+ if(!subgroup)return '';
+ const unknown=rows.filter(row=>!row.subgroup).length;
+ return `<p>Подгруппа ${subgroup}${unknown?' · записей без подгруппы: '+unknown:''}</p>`;
+}
 function attendanceRowsHtml(rows,filter){
  const visible=rows.filter(row=>filter==='all'||Number(filter)===row.type)
   .slice().sort((a,b)=>b.start-a.start);
  if(!visible.length)return rows.length?'<p>По этому фильтру отметок нет.</p>':'';
  return `<div class="attendance-rows">${visible.map(row=>{
   const [label,kind]=attendanceTypes[row.type]||['Статус неизвестен','unknown'];
-  return `<div class="attendance-row ${kind}"><time>${lessonDateFormat.format(row.start*1000)}</time><b>${label}</b></div>`;
+  return `<div class="attendance-row ${kind}"><time>${lessonDateFormat.format(row.start*1000)}</time><b>${label}${row.subgroup?`<small>Подгруппа ${safe(row.subgroup)}</small>`:selectedAttendanceSubgroup()?'<small>Подгруппа не указана</small>':''}</b></div>`;
  }).join('')}</div>`;
 }
 function attendanceCountsHtml(rows,checked){
@@ -321,15 +334,16 @@ function paintAttendanceDialog(){
    format:'Не удалось разобрать журнал МИРЭА.',journals:'МИРЭА не вернула доступные журналы.'};
   box.innerHTML='<p>'+(message[info.error]||'Не удалось загрузить посещения.')+'</p>'+refresh;
  }else if(info.summaries?.length){
-  box.innerHTML=scope+'<p>Пульс вернул сводку. Подробные отметки по датам недоступны.</p><p>'+safe(window.disciplineUpdated?.(info.updated)||'')+'</p>'+refresh+
+  box.innerHTML=scope+(selectedAttendanceSubgroup()?'<p>Сводка Пульса без разбивки по подгруппам.</p>':'')+'<p>Пульс вернул сводку. Подробные отметки по датам недоступны.</p><p>'+safe(window.disciplineUpdated?.(info.updated)||'')+'</p>'+refresh+
    info.summaries.map((row,index)=>`<p>Журнал ${index+1} · Присутствий: ${row.present} · Пропусков: ${row.absent} · По уважительной причине: ${row.excused} · Всего занятий: ${row.total}</p>`).join('');
  }else if(!info.total){
   box.innerHTML=scope+'<p>МИРЭА не вернула отметок по предмету в доступных журналах.</p>'+refresh;
  }else{
-  box.innerHTML=`${scope}<p>Источник: журнал дисциплины Пульса</p>
+  const subgroup=selectedAttendanceSubgroup(),rows=attendanceForSubgroup(info.entries,subgroup);
+  box.innerHTML=`${scope}${attendanceSubgroupNotice(rows,subgroup)}<p>Источник: журнал дисциплины Пульса</p>
    <p>${safe(window.disciplineUpdated?.(info.updated)||'')}</p>
    ${info.partial?'<p>Загружена часть журналов.</p>':''}${refresh}
-   ${attendanceCountsHtml(info.entries,null)}${attendanceRowsHtml(info.entries,filter)}`;
+   ${attendanceCountsHtml(rows,null)}${attendanceRowsHtml(rows,filter)}${rows.length?'':'<p>Отметок для выбранной подгруппы нет среди полученных записей.</p>'}`;
  }
  if((attendanceDialog.daily||!info.entries?.length)&&info.error!=='login')paintRecentCourseAttendance(box);
  $('#retry-course-attendance').onclick=()=>{
@@ -471,7 +485,8 @@ function paintRecentCourseAttendance(box){
  if(!dialog.dates)dialog.dates=recentCourseDates(dialog.name,null);
  const missing=dialog.dates.find(date=>!dailyAttendance.has(dateKey(date)));
  if(!dialog.paused&&missing&&!dailyAttendanceRequests.size&&navigator.onLine!==false)requestDailyAttendance(missing);
- const {checked,failed,updated,rows}=summarizeCourseDays(dialog);
+ const {checked,failed,updated,rows:allRows}=summarizeCourseDays(dialog);
+ const subgroup=selectedAttendanceSubgroup(),rows=attendanceForSubgroup(allRows,subgroup);
  const range=dialog.range||(dialog.dates.length?{from:dateKey(dialog.dates.at(-1)),to:dateKey(dialog.dates[0])}:null);
  const status=!dialog.dates.length?'В загруженном расписании нет дат по этой дисциплине.'
   :navigator.onLine===false?'Нет сети. Показаны доступные сохранённые отметки.'
@@ -480,7 +495,7 @@ function paintRecentCourseAttendance(box){
  const full=attendanceByCourse.get(dialog.id);
  const heading=dialog.period==='recent'?'Последние занятия':dialog.period==='semester'?'Текущий семестр':'Выбранный диапазон';
  box.insertAdjacentHTML('beforeend',`<section id="attendance-daily"><h3>${heading}</h3>
-  <p>Источник: дневной журнал Пульса</p>
+  <p>Источник: дневной журнал Пульса</p>${attendanceSubgroupNotice(rows,subgroup)}
   ${range?`<p>${safe(range.from)} — ${safe(range.to)}</p>`:''}
   ${updated?`<p>${safe(window.disciplineUpdated?.(updated)||'')}</p>`:''}
   ${dialog.dates.length?`<p role="status">Проверено ${checked} из ${dialog.dates.length} дат · получено записей: ${rows.length}${failed?' · ошибок: '+failed:''}</p>`:''}

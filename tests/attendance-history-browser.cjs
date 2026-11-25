@@ -20,6 +20,7 @@ const {chromium}=require('playwright');
    document.querySelectorAll('dialog[open]').forEach(dialog=>dialog.close());
    const group={target:1,id:999,title:'Тестовая группа'};
    state.officialGroup=group;
+   state.subgroups={[calendarKey(group)]:'1'};
    const today=new Date(moscowParts(new Date()).date+'T12:00:00');
    window.fixtureDays=Array.from({length:10},(_,index)=>{
     const date=new Date(today);
@@ -42,15 +43,18 @@ const {chromium}=require('playwright');
   await page.evaluate(()=>{
    const {id,day}=window.dayQueries.at(-1);
    const start=Date.parse(day+'T09:00:00+03:00')/1000;
-   const present={subject:'Философия',disciplineId:'philosophy',lessonId:'a',start,type:3};
+   const present={subject:'Философия',disciplineId:'philosophy',lessonId:'a',start,type:3,subgroup:'1'};
    window.orbitaMireaDailyMarks(id,{entries:[
     present,present,{...present,lessonId:'b',start:start+3600,type:1},
-    {...present,lessonId:'c',start:start+7200,type:99},{...present,disciplineId:'other',lessonId:'d',type:1}
+    {...present,lessonId:'c',start:start+7200,type:99,subgroup:''},
+    {...present,lessonId:'e',start:start+10800,type:1,subgroup:'2'},{...present,disciplineId:'other',lessonId:'d',type:1}
    ]});
    window.orbitaMireaDailyMarks(window.dayQueries.at(-1).id,{error:'network'});
   });
   assert.match(await history.innerText(),/Проверено 1 из 6 дат · получено записей: 3 · ошибок: 1/);
   assert.match(await history.innerText(),/Неизвестный статус: 1/);
+  assert.match(await history.innerText(),/Подгруппа не указана/);
+  assert.doesNotMatch(await history.innerText(),/Подгруппа 2/);
   assert.equal(await page.evaluate(()=>window.dayQueries.length),2);
   await page.locator('#attendance-refresh-days').click();
   assert.equal(await page.evaluate(()=>window.dayQueries.length),3);

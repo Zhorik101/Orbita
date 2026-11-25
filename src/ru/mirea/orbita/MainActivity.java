@@ -340,7 +340,7 @@ public class MainActivity extends Activity {
                     var rows = new org.json.JSONArray();
                     for (var mark : marks) {
                         rows.put(new JSONObject().put("subject", mark.subject()).put("start", mark.start()).put("type", mark.type())
-                            .put("disciplineId", mark.disciplineId()).put("lessonId", mark.lessonId()));
+                            .put("disciplineId", mark.disciplineId()).put("lessonId", mark.lessonId()).put("subgroup", mark.subgroup()));
                     }
                     result.put("entries", rows);
                 } catch (Exception error) {
@@ -375,7 +375,7 @@ public class MainActivity extends Activity {
                     if (attendance != null) {
                         var rows = new org.json.JSONArray();
                         for (var entry : attendance.entries()) {
-                            rows.put(new JSONObject().put("start", entry.start()).put("type", entry.type()));
+                            rows.put(new JSONObject().put("start", entry.start()).put("type", entry.type()).put("subgroup", entry.subgroup()));
                         }
                         parsed = attendance.total();
                         code = attendance.partial() ? "partial" : parsed == 0 ? "empty" : "ok";

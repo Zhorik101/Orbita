@@ -25,7 +25,7 @@ final class MireaAcademicApi {
     record Category(String name, double points, Double maximum) {}
     record Course(String id, String name, int term, Double total, Double maximum, Double attendance,
                   List<Category> categories, Double threshold, String thresholdName, int present, int lessons) {}
-    record DailyMark(String subject, long start, int type, String disciplineId, String lessonId) {}
+    record DailyMark(String subject, long start, int type, String disciplineId, String lessonId, String subgroup) {}
     private static final Map<String, String> CATEGORY_NAMES = categoryNames();
 
     private static Map<String, String> categoryNames() {
@@ -249,7 +249,7 @@ final class MireaAcademicApi {
                     recognized = true;
                     if (status.isEmpty() || start > java.time.Instant.now().getEpochSecond() + 120) continue;
                     marks.add(new DailyMark(subject, start.longValue(), type,
-                        disciplineId.matches(UUID) ? disciplineId : "", lessonId.matches(UUID) ? lessonId : ""));
+                        disciplineId.matches(UUID) ? disciplineId : "", lessonId.matches(UUID) ? lessonId : "", lessonSubgroup(lesson)));
                 }
             }
         }
@@ -257,7 +257,7 @@ final class MireaAcademicApi {
         return marks;
     }
 
-    record AttendanceEntry(long start, int type, String lessonId) {}
+    record AttendanceEntry(long start, int type, String lessonId, String subgroup) {}
     record Attendance(int present, int absent, int excused, int total, List<AttendanceEntry> entries,
                       int journals, boolean partial) {}
     static final class AttendanceFailure extends IOException {
@@ -447,9 +447,16 @@ final class MireaAcademicApi {
             int status = type != null && (type == 1 || type == 2 || type == 3) ? type.intValue() : 0;
             if (seconds > now + 120) continue;
             String lessonId = string(lesson, 1);
-            result.add(new AttendanceEntry(seconds.longValue(), status, lessonId.matches(UUID) ? lessonId : ""));
+            result.add(new AttendanceEntry(seconds.longValue(), status, lessonId.matches(UUID) ? lessonId : "", lessonSubgroup(lesson)));
         }
         return complete;
+    }
+
+    private static String lessonSubgroup(List<Field> lesson) {
+        // Pulse lesson field 10 is a subgroup label. Keep only explicit numbered labels.
+        var match = java.util.regex.Pattern.compile("(?iu)^(?:(?:подгруппа|п/г)\\s*)?№?\\s*([0-9]{1,2})$")
+            .matcher(string(lesson, 10));
+        return match.matches() ? Integer.toString(Integer.parseInt(match.group(1))) : "";
     }
 
     private static List<List<Field>> safeMessages(List<Field> data, int field) {
