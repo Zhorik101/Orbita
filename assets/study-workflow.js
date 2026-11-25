@@ -293,7 +293,7 @@ function paintAttendanceDialog(){
  const box=$('#course-attendance-content'),{id}=attendanceDialog,info=attendanceByCourse.get(id);
  if(!info){
   box.innerHTML='<p>Загружаем посещения…</p>';
-  paintRecentCourseAttendance(box);
+  if(attendanceDialog.daily)paintRecentCourseAttendance(box);
   return;
  }
  const scope='<p>Все доступные отметки по дисциплине. Они могут относиться к нескольким семестрам.</p>';
@@ -318,20 +318,52 @@ function paintAttendanceDialog(){
     return `<div class="attendance-row ${kind}"><time>${lessonDateFormat.format(entry.start*1000)}</time><b>${name}</b></div>`;
    }).join('')}</div>`;
  }
- if(!info.entries?.length&&info.error!=='login')paintRecentCourseAttendance(box);
+ if((attendanceDialog.daily||!info.entries?.length)&&info.error!=='login')paintRecentCourseAttendance(box);
  $('#retry-course-attendance').onclick=()=>{
   if(info.error==='login'){openPulseGrades(true);$('#modal').close();return}
-  for(const date of attendanceDialog.dates||[]){
-   const key=dateKey(date);
-   if(dailyAttendance.get(key)?.error)dailyAttendance.delete(key);
-  }
+  refreshCourseDays(attendanceDialog,false);
   attendanceByCourse.delete(id);requestCourseAttendance(id);paintAttendanceDialog();
  };
 }
 function showCourseAttendance(id,name){
- attendanceDialog={id,name,dates:null};
+ attendanceDialog={id,name,dates:null,daily:false,period:'recent',paused:false};
  if(attendanceByCourse.get(id)?.error && attendanceByCourse.get(id).error!=='login')attendanceByCourse.delete(id);
- modal(`<h2>Посещения по дисциплине</h2><p>${safe(name)}</p><div id="course-attendance-content"></div>`);
+ modal(`<h2>Посещения по дисциплине</h2><p>${safe(name)}</p>
+  ${window.OrbitaAndroid?.loadMireaDailyMarks?`<details id="attendance-period-options">
+   <summary>Период дневного журнала</summary>
+   <form id="attendance-period-form">
+    <label>Период <select id="attendance-period"><option value="recent">Последние занятия</option>
+     <option value="semester">Текущий семестр</option><option value="range">Диапазон дат</option></select></label>
+    <div id="attendance-range" hidden><p id="attendance-range-hint"></p>
+     <label>С <input type="date" id="attendance-from"></label>
+     <label>По <input type="date" id="attendance-to"></label></div>
+    <p id="attendance-period-error" role="status"></p><button type="submit">Показать отметки</button>
+   </form></details>`:''}<div id="course-attendance-content"></div>`);
+ const selector=$('#attendance-period');
+ if(selector){
+  const range=$('#attendance-range');
+  selector.onchange=()=>{
+   range.hidden=selector.value==='recent';
+   $('#attendance-range-hint').textContent=selector.value==='semester'
+    ?'МИРЭА не передаёт границы семестра в этом разделе. Укажи даты по учебному календарю.':'';
+  };
+  $('#attendance-period-form').onsubmit=event=>{
+   event.preventDefault();
+   const dialog=attendanceDialog,period=selector.value;
+   const from=$('#attendance-from').value,to=$('#attendance-to').value;
+   if(period!=='recent'&&!validAttendanceRange(from,to)){
+    $('#attendance-period-error').textContent='Выбери прошедший диапазон до 366 дней включительно.';
+    return;
+   }
+   $('#attendance-period-error').textContent='';
+   dialog.period=period;
+   dialog.dates=recentCourseDates(dialog.name,period==='recent'?null:{from,to});
+   dialog.range=period==='recent'?null:{from,to};
+   dialog.daily=true;
+   dialog.paused=false;
+   paintAttendanceDialog();
+  };
+ }
  requestCourseAttendance(id);
  paintAttendanceDialog();
 }
@@ -343,9 +375,12 @@ const dailyAttendance=new Map(),dailyAttendanceRequests=new Map();
 let dailyAttendanceRequest=0;
 function requestDailyAttendance(date){
  const key=dateKey(date);
- if(!window.OrbitaAndroid?.loadMireaDailyMarks||dailyAttendance.has(key)||key>dateKey(new Date()))return;
+ if(!window.OrbitaAndroid?.loadMireaDailyMarks||dailyAttendance.has(key)||dailyAttendanceRequests.size>=2||key>moscowParts(new Date()).date)return;
  dailyAttendance.set(key,null);
- if(dailyAttendance.size>14)dailyAttendance.delete(dailyAttendance.keys().next().value);
+ if(dailyAttendance.size>400){
+  const oldest=[...dailyAttendance].find(([,value])=>value!==null);
+  if(oldest)dailyAttendance.delete(oldest[0]);
+ }
  const request=++dailyAttendanceRequest;
  dailyAttendanceRequests.set(request,key);
  requestMireaReply('day:'+request,()=>window.OrbitaAndroid.loadMireaDailyMarks(request,key),
@@ -357,49 +392,89 @@ window.orbitaMireaDailyMarks=(request,result)=>{
  dailyAttendanceRequests.delete(request);
  dailyAttendance.set(key,result);
  if(page==='pairs'&&dateKey(pairsDate)===key)renderPairs();
- if(attendanceDialog?.dates?.some(date=>dateKey(date)===key)&&$('#modal').open&&$('#course-attendance-content'))paintAttendanceDialog();
+ if(attendanceDialog?.dates&&$('#modal').open&&$('#course-attendance-content')){
+  if(result?.error&&attendanceDialog.dates.some(date=>dateKey(date)===key))attendanceDialog.paused=true;
+  paintAttendanceDialog();
+ }
 };
-// Use the signed-in student's dated marks when the discipline journal is unavailable.
-function recentCourseDates(name){
+// Only dates found in the official schedule are queried. A date with no rows never implies absence.
+function validAttendanceRange(from,to){
+ const first=Date.parse(from+'T00:00:00Z'),last=Date.parse(to+'T00:00:00Z');
+ return Number.isFinite(first)&&Number.isFinite(last)&&last>=first&&last-first<=365*86400000
+  &&to<=moscowParts(new Date()).date;
+}
+function recentCourseDates(name,range){
  const group=state.pinnedGroup||state.officialGroup;
  if(!group)return [];
  const dates=[];
- const today=new Date(moscowParts(new Date()).date+'T12:00:00');
- const subject=subjectKey(name);
- for(let offset=0;offset<90&&dates.length<6;offset++){
+ const today=new Date((range?.to||moscowParts(new Date()).date)+'T12:00:00');
+ const subject=subjectKey(name),limit=range?366:90;
+ for(let offset=0;offset<limit;offset++){
   const date=new Date(today);
   date.setDate(today.getDate()-offset);
+  if(range&&dateKey(date)<range.from)break;
   if(officialLessons(group,date).some(lesson=>subjectKey(lesson.title)===subject))dates.push(date);
+  if(!range&&dates.length>=6)break;
  }
  return dates;
+}
+function refreshCourseDays(dialog,force){
+ for(const date of dialog.dates||[]){
+  const key=dateKey(date),cached=dailyAttendance.get(key);
+  if(cached&&(force||cached.error))dailyAttendance.delete(key);
+ }
+ dialog.paused=false;
+}
+function summarizeCourseDays(dialog){
+ const subject=subjectKey(dialog.name),identified=new Map(),distinct=[];
+ let checked=0,failed=0;
+ for(const date of dialog.dates){
+  const result=dailyAttendance.get(dateKey(date));
+  if(result?.error){failed++;continue}
+  if(!Array.isArray(result?.entries))continue;
+  checked++;
+  for(const mark of result.entries){
+   if(mark.disciplineId?mark.disciplineId!==dialog.id:subjectKey(mark.subject||'')!==subject)continue;
+   if(!Number.isFinite(mark.start))continue;
+   const entry={...mark,type:attendanceTypes[mark.type]?mark.type:0};
+   if(!mark.lessonId){distinct.push(entry);continue}
+   const previous=identified.get(mark.lessonId);
+   if(!previous)identified.set(mark.lessonId,entry);
+   else if(previous.type!==entry.type)identified.set(mark.lessonId,{...previous,type:0});
+  }
+ }
+ return {checked,failed,rows:[...distinct,...identified.values()].sort((a,b)=>b.start-a.start)};
 }
 function paintRecentCourseAttendance(box){
  if(!window.OrbitaAndroid?.loadMireaDailyMarks)return;
  const dialog=attendanceDialog;
- if(!dialog.dates)dialog.dates=recentCourseDates(dialog.name);
- if(!dialog.dates.length)return;
+ if(!dialog.dates)dialog.dates=recentCourseDates(dialog.name,null);
  const missing=dialog.dates.find(date=>!dailyAttendance.has(dateKey(date)));
- const pending=dialog.dates.some(date=>dailyAttendance.get(dateKey(date))===null);
- if(!pending&&missing)requestDailyAttendance(missing);
- const subject=subjectKey(dialog.name);
- const results=dialog.dates.map(date=>dailyAttendance.get(dateKey(date)));
- const seen=new Set();
- const rows=results.flatMap(result=>result?.entries||[]).filter(mark=>{
-  if(mark.disciplineId ? mark.disciplineId!==dialog.id : subjectKey(mark.subject||'')!==subject)return false;
-  if(!attendanceTypes[mark.type]||!Number.isFinite(mark.start))return false;
-  if(!mark.lessonId)return true;
-  if(seen.has(mark.lessonId))return false;
-  seen.add(mark.lessonId);
-  return true;
- }).sort((a,b)=>b.start-a.start);
- const note=missing||pending?'Проверяем последние занятия в дневном журнале Пульса…'
-  :results.some(result=>result?.error)?'Часть дат не удалось проверить.':'Проверены даты последних занятий из расписания.';
- box.insertAdjacentHTML('beforeend',`<section><h3>Последние занятия</h3><p>${note}</p>
+ if(!dialog.paused&&missing&&!dailyAttendanceRequests.size&&navigator.onLine!==false)requestDailyAttendance(missing);
+ const {checked,failed,rows}=summarizeCourseDays(dialog);
+ const range=dialog.range||(dialog.dates.length?{from:dateKey(dialog.dates.at(-1)),to:dateKey(dialog.dates[0])}:null);
+ const status=!range?'В загруженном расписании нет дат по этой дисциплине.'
+  :navigator.onLine===false?'Нет сети. Показаны доступные сохранённые отметки.'
+  :dialog.paused?'Часть запросов завершилась ошибкой. Можно продолжить.'
+  :checked===dialog.dates.length?'Проверены все найденные в расписании даты.':'Проверка дат продолжается…';
+ box.insertAdjacentHTML('beforeend',`<section id="attendance-daily"><h3>Последние занятия · дневной журнал Пульса</h3>
+  ${range?`<p>${safe(range.from)} — ${safe(range.to)}</p>
+   <p role="status">Проверено ${checked} из ${dialog.dates.length} дат · получено записей: ${rows.length}${failed?' · ошибок: '+failed:''}</p>`:''}
+  <p>Показаны отметки за проверенные занятия. Полный журнал пока недоступен.</p><p>${status}</p>
+  ${dialog.dates.length?`<button type="button" id="attendance-refresh-days">${failed?'Повторить и продолжить':'Обновить даты'}</button>`:''}
   ${rows.length?`<div class="attendance-rows">${rows.map(mark=>{
-   const [label,kind]=attendanceTypes[mark.type];
+   const [label,kind]=attendanceTypes[mark.type]||['Статус неизвестен','unknown'];
    return `<div class="attendance-row ${kind}"><time>${lessonDateFormat.format(mark.start*1000)}</time><b>${label}</b></div>`;
   }).join('')}</div>`:''}</section>`);
+ const retry=$('#attendance-refresh-days');
+ if(retry)retry.onclick=()=>{refreshCourseDays(dialog,!failed);paintAttendanceDialog()};
 }
+window.addEventListener('online',()=>{
+ if(attendanceDialog&&$('#modal').open&&$('#course-attendance-content')){
+  refreshCourseDays(attendanceDialog,false);
+  paintAttendanceDialog();
+ }
+});
 function retryVisibleAttendance(){
  if(document.hidden||page!=='pairs'||pairsMode!=='day'||!ownPairsSelected())return;
  const day=dateKey(pairsDate);
