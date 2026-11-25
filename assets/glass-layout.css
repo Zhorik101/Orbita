@@ -30,3 +30,54 @@ body[data-glass]:not([data-glass="off"]) :is(
     .mini-note, .mini-current-group, .team-panel, .team-item, .work-window
   ) { background: var(--glass-solid) !important; }
 }
+
+/* Align tiles by content. Keep the icon area available to the order editor. */
+.reference-ui #mini-grid {
+  grid-template-columns: repeat(2,minmax(0,1fr));
+  gap: 12px;
+  grid-auto-rows: auto;
+}
+.reference-ui #mini-grid > .mini-tile {
+  min-width: 0;
+  min-height: 145px;
+  height: auto;
+  padding: 13px;
+  border-radius: 20px;
+  align-items: flex-start;
+}
+.reference-ui #mini-grid .mini-tile-top {
+  width: 100%;
+  margin: 0 0 9px;
+  padding: 0;
+  background: transparent;
+}
+.reference-ui #mini-grid .mini-tile-top > i {
+  width: 34px !important;
+  height: 34px !important;
+  border-radius: 11px;
+  flex: none;
+}
+.reference-ui #mini-grid .mini-tile-top > i svg { width: 20px; height: 20px; }
+.reference-ui #mini-grid .mini-tile-top > span svg { width: 17px; height: 17px; }
+.reference-ui #mini-grid .mini-tile > b {
+  font-size: 15px;
+  line-height: 1.22;
+  overflow-wrap: anywhere;
+}
+.reference-ui #mini-grid .mini-tile > p {
+  margin: 5px 0 0;
+  font-size: 12px;
+  line-height: 1.32;
+  overflow-wrap: anywhere;
+}
+.reference-ui #mini-grid .mini-tile > small { padding-top: 6px; font-size: 11px; }
+.reference-ui #mini-grid .mini-tile:not(:has(> small)) > p { margin-bottom: 0; }
+@media (min-width: 720px) {
+  .reference-ui #mini-grid { grid-template-columns: repeat(3,minmax(0,1fr)); }
+}
+@media (max-width: 360px) {
+  .reference-ui #mini-grid { gap: 9px; }
+  .reference-ui #mini-grid > .mini-tile { padding: 11px; }
+  .reference-ui #mini-grid .mini-order-controls { inset-inline: 8px; gap: 3px; }
+  .reference-ui #mini-grid .mini-order-controls > span { min-width: 30px; }
+}
