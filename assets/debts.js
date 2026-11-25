@@ -206,7 +206,7 @@ function paintAcademicRetakes(){
  const rows=[...state.academicRetakes].sort((a,b)=>Number(a.done)-Number(b.done)
   ||(a.date||'9999').localeCompare(b.date||'9999'));
  const items=rows.map(item=>`<li><button type="button" data-retake="${item.id}">${safe(item.subject)}</button>
-  <small>${item.kind==='exam'?'Экзамен':'Зачёт'} · ${item.date?safe(debtDateLabel(item.date)):'Дата уточняется'} · ${item.done?'Закрыто':'К пересдаче'}</small></li>`).join('');
+  <small>${item.kind==='exam'?'Экзамен':'Зачёт'} · ${item.term?item.term+' семестр · ':''}${item.date?safe(debtDateLabel(item.date)):'Дата уточняется'} · ${item.done?'Закрыто':'К пересдаче'}</small></li>`).join('');
  root.innerHTML=disciplinePanel('Мои пересдачи',`<p>Записи из ведомости, внесённые вручную.</p>
   <button type="button" id="add-retake">+ Пересдача</button>${items?`<ul>${items}</ul>`:''}`);
  $('#add-retake').onclick=()=>editAcademicRetake();
@@ -218,12 +218,14 @@ function commitAcademicRetakes(records){
  state.academicRetakes=records;
  if(!save()){state.academicRetakes=previous;return}
  $('#modal').close();
- paintAcademicRetakes();
+ if(page==='mini-academic-debts')paintAcademicRetakes();
+ if(page==='mini-discipline')window.paintDiscipline?.();
 }
-function editAcademicRetake(item){
+function editAcademicRetake(item,course){
  modal(`<h2>${item?'Пересдача':'Добавить пересдачу'}</h2>
  <form id="retake-form">
- <label class="control-field">Дисциплина <input id="retake-subject" maxlength="160" required value="${safe(item?.subject||'')}"></label>
+ <label class="control-field">Дисциплина <input id="retake-subject" maxlength="160" required value="${safe(item?.subject||course?.name||'')}"${course?' readonly':''}></label>
+ <label class="control-field">Семестр <input id="retake-term" type="number" min="1" max="99" value="${item?.term||course?.term||''}"${course?.term?' readonly':''}></label>
  <label class="control-field">Вид контроля <select id="retake-kind">${controlOptions({exam:'Экзамен',credit:'Зачёт'},item?.kind||'exam')}</select></label>
  <label class="control-field">Дата <input id="retake-date" type="date" value="${safe(item?.date||'')}"></label>
  <label class="setting-row"><span>Задолженность закрыта</span><input type="checkbox" id="retake-done"${item?.done?' checked':''}></label>
@@ -235,8 +237,31 @@ function editAcademicRetake(item){
   const subject=$('#retake-subject').value.trim();
   if(!subject){$('#retake-subject').focus();return}
   const [entry]=cleanAcademicRetakes([{id:item?.id||'retake_'+newControlId().slice(4),subject,
+   term:Number($('#retake-term').value)||null,courseId:course?.id||(
+    item?.subject===subject&&item.term===(Number($('#retake-term').value)||null)?item.courseId:''),
    date:$('#retake-date').value,kind:$('#retake-kind').value,done:$('#retake-done').checked}]);
   commitAcademicRetakes(item?state.academicRetakes.map(row=>row.id===item.id?entry:row):[...state.academicRetakes,entry]);
  };
  if(item)$('#delete-retake').onclick=()=>commitAcademicRetakes(state.academicRetakes.filter(row=>row.id!==item.id));
 }
+
+function courseRetakes(course){
+ return state.academicRetakes.filter(item=>item.term===(course.term||null)&&
+  (item.courseId&&course.id?item.courseId===course.id:subjectKey(item.subject)===subjectKey(course.name)));
+}
+window.courseRetakeBadge=course=>{
+ const open=courseRetakes(course).filter(item=>!item.done).length;
+ return open?`<p class="course-sport-attendance">Мои пересдачи · ${open}</p>`:'';
+};
+window.courseRetakesPanel=course=>{
+ const rows=courseRetakes(course);
+ return disciplinePanel('Пересдачи',`<p>Записи, добавленные вручную.</p>
+  <button type="button" id="add-course-retake">+ Пересдача</button>
+  ${rows.length?`<ul>${rows.map(item=>`<li><button type="button" data-course-retake="${item.id}">${item.kind==='exam'?'Экзамен':'Зачёт'} · ${item.done?'Закрыто':'К пересдаче'}</button>
+   <small>${item.date?safe(debtDateLabel(item.date)):'Дата уточняется'}</small></li>`).join('')}</ul>`:''}`);
+};
+window.bindCourseRetakes=(overview,course)=>{
+ overview.querySelector('#add-course-retake').onclick=()=>editAcademicRetake(null,course);
+ overview.querySelectorAll('[data-course-retake]').forEach(button=>button.onclick=()=>
+  editAcademicRetake(courseRetakes(course).find(item=>item.id===button.dataset.courseRetake),course));
+};

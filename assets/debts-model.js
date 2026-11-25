@@ -46,6 +46,8 @@ function cleanAcademicRetakes(value){
      ||typeof item.subject!=='string'||!item.subject.trim())return [];
   seen.add(item.id);
   return [{id:item.id,subject:item.subject.trim().slice(0,160),date:controlDateValid(item.date)?item.date:'',
-   kind:item.kind==='exam'?'exam':'credit',done:item.done===true}];
+   kind:item.kind==='exam'?'exam':'credit',done:item.done===true,
+   courseId:typeof item.courseId==='string'?item.courseId.slice(0,120):'',
+   term:Number.isInteger(item.term)&&item.term>0&&item.term<100?item.term:null}];
  });
 }

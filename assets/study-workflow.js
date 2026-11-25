@@ -496,7 +496,7 @@ function paintCourseTools(){
  const rowsBySubject=[...subjects.values()].sort((a,b)=>a.name.localeCompare(b.name,'ru'));
  $('#mini-courses-body').innerHTML=rowsBySubject.map(({name,score},index)=>`<article class="course-discipline">
  <div class="course-discipline-heading"><h2><button type="button" class="discipline-open" data-open-discipline="${index}">${safe(name)} ${courseChevron()}</button></h2><button type="button" data-course-task="${index}">+ Работа</button></div>
- ${courseScoreHtml(score)}</article>`).join('')||(!courseGradesLoading&&!result?.error&&result?'<p>В этом семестре нет дисциплин в БРС.</p>':'');
+ ${courseScoreHtml(score)}${window.courseRetakeBadge?.({name,id:score?.id,term:score?.term})||''}</article>`).join('')||(!courseGradesLoading&&!result?.error&&result?'<p>В этом семестре нет дисциплин в БРС.</p>':'');
  $$('[data-open-discipline]').forEach(button=>{
   const row=rowsBySubject[Number(button.dataset.openDiscipline)];
   button.onclick=()=>window.openDiscipline?.(row.name,row.score);

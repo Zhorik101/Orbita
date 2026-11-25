@@ -34,6 +34,7 @@ const {chromium}=require('playwright');
    window.gradeRequests=[];
    window.attendanceRequestsSeen=[];
    window.OrbitaAndroid={
+    write:()=>true,
     loadMireaGrades:(request)=>window.gradeRequests.push(request),
     loadMireaAttendance:(request,id)=>window.attendanceRequestsSeen.push({request,id})
    };
@@ -83,6 +84,14 @@ const {chromium}=require('playwright');
   await page.evaluate(()=>window.orbitaMireaGrades(window.gradeRequests.at(-1),{error:'network'}));
   assert.match(await detail.innerText(),/показаны сохранённые баллы/);
   assert.match(await detail.innerText(),/24/);
+  await detail.getByRole('button',{name:'+ Пересдача'}).click();
+  assert.equal(await page.locator('#retake-term').inputValue(),'3');
+  await page.locator('#retake-form').getByRole('button',{name:'Сохранить'}).click();
+  assert.equal(await detail.locator('[data-course-retake]').count(),1);
+  await page.evaluate(()=>window.openDiscipline('Информационные технологии в химии',{id:'chem',term:2}));
+  assert.equal(await detail.locator('[data-course-retake]').count(),0);
+  await page.evaluate(()=>window.openDiscipline('Информационные технологии в химии',{id:'chem',term:3}));
+  assert.equal(await detail.locator('[data-course-retake]').count(),1);
   await page.evaluate(()=>handleAppBack());
   assert.equal(await page.locator('#mini-courses-page').isVisible(),true);
   await page.evaluate(()=>{courseGradeResult={error:'login'};paintCourseTools()});
