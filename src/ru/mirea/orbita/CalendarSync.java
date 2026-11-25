@@ -127,9 +127,11 @@ final class CalendarSync {
             long end = start + 86400000;
             from = Math.min(from, start);
             to = Math.max(to, end);
+            String source=SdoPortalLinks.bookmark(task.optString("sdoUrl"));
             events.put(new JSONObject().put("uid",task.optString("workId")).put("start",start).put("end",end)
                 .put("title",taskCalendarTitle(task)).put("description",
-                    task.optString("text","Работа") + "\n" + task.optString("subject") + "\n" + task.optString("comment")));
+                    task.optString("text","Работа") + "\n" + task.optString("subject") + "\n" + task.optString("comment")
+                    + (source.isEmpty()?"":"\nСДО: "+source)));
         }
         return new JSONObject().put("scope","tasks").put("events",events)
             .put("from",events.length()==0?86400000L:from).put("to",events.length()==0?172800000L:to);

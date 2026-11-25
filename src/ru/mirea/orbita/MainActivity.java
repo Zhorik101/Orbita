@@ -204,6 +204,30 @@ public class MainActivity extends Activity {
             runOnUiThread(new Runnable(){@Override public void run(){try{startActivity(Intent.createChooser(new Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT,"Приглашение в команду Орбиты: "+link),"Пригласить в команду"));}catch(Exception ignored){}}});
         }
 
+        @JavascriptInterface public void copyStudyText(String value) {
+            if (value==null || value.length()>32000) return;
+            runOnUiThread(() -> {
+                var board=(android.content.ClipboardManager)getSystemService(Context.CLIPBOARD_SERVICE);
+                board.setPrimaryClip(android.content.ClipData.newPlainText("Учебная задача",value));
+            });
+        }
+        @JavascriptInterface public void shareStudyText(String value,String provider) {
+            if (value==null || value.trim().isEmpty() || value.length()>32000) return;
+            String target = switch (provider==null?"":provider) {
+                case "chatgpt" -> "com.openai.chatgpt";
+                case "gemini" -> "com.google.android.apps.bard";
+                case "claude" -> "com.anthropic.claude";
+                default -> "";
+            };
+            runOnUiThread(() -> {
+                var send=new Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT,value);
+                if (!target.isEmpty()) {
+                    try { startActivity(new Intent(send).setPackage(target)); return; }
+                    catch (android.content.ActivityNotFoundException | SecurityException unavailable) {}
+                }
+                startActivity(Intent.createChooser(send,"Поделиться учебной задачей"));
+            });
+        }
         @JavascriptInterface public void openSdoPortal(String url) { launchSdoPortal(url,false,""); }
         @JavascriptInterface public void syncSdoPortal(String url) { launchSdoPortal(url,true,""); }
         @JavascriptInterface public void downloadSdoMaterial(String url,String id) {
@@ -621,6 +645,14 @@ public class MainActivity extends Activity {
         }
 
         if (requestCode == SdoPortalActivity.REQUEST) {
+            if (resultCode == RESULT_CANCELED && data != null) {
+                String source=data.getStringExtra("sdoDownloadId");
+                if (source != null) {
+                    String script="window.cancelStudyDownload?.("+JSONObject.quote(source)+")";
+                    if (pageReady && web!=null) web.evaluateJavascript(script,null);
+                    else pendingSdoPortalScript=script;
+                }
+            }
             if (resultCode == RESULT_OK && data != null) {
                 String document = data.getStringExtra("sdoDocument");
                 if (document != null) {

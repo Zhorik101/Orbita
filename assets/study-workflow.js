@@ -43,14 +43,15 @@ function nextCourseDate(subject,kind=''){
 addTask=function(subjectPreset, options={}){
  const original = options.workId ? state.tasks.find(task => task.workId === options.workId) : null;
  if (options.workId && (!original || original.done)) { toast('Этой работы уже нет в списке'); return; }
- const initialKind = original?.kind || original?.text || workTypes[0];
+ const draft=options.draft||{};
+ const initialKind = draft.kind || original?.kind || original?.text || workTypes[0];
  const initialNumber = original?.text?.startsWith(initialKind+' ') ? original.text.slice(initialKind.length+1) : '';
  let kind = initialKind;
  const subjects = [...new Set([...courseSubjects(),...savedTaskPresets(true)])];
  for(const name of savedTaskPresets(false))if(!workTypes.includes(name))workTypes.push(name);
  if (!subjects.includes('Личное')) subjects.push('Личное');
- let subject = original?.subject || (typeof subjectPreset==='string' && subjectPreset) || subjects[0] || '';
- let due = original?.dueISO || (options.dueToday ? dateKey(new Date()) : '');
+ let subject = draft.subject || original?.subject || (typeof subjectPreset==='string' && subjectPreset) || subjects[0] || '';
+ let due = draft.dueISO ?? (original?.dueISO || (options.dueToday ? dateKey(new Date()) : ''));
  let dueChanged = false, custom = '';
  let majorTouched=original?.major!==undefined;
  modal('<h2>'+(original?'Изменить работу':'Добавить работу')+'</h2><p id="work-intro">Выбери тип, предмет и срок. Писать название необязательно.</p><label>Что нужно сделать?</label><div class="work-split"><input id="work-kind-input" aria-label="Вид работы" maxlength="60"><button type="button" id="work-kind-presets" aria-label="Шаблоны работ" aria-expanded="false">▼</button></div><div id="work-types" class="work-chips" hidden></div><div id="custom-work-editor" hidden><label for="custom-work-type">Свой вид работы</label><input id="custom-work-type" maxlength="60" placeholder="Например, эссе или макет"><button id="save-custom-work-type" class="primary">Добавить шаблон</button><p id="custom-work-status" role="status"></p></div><div id="work-fixed-subject" hidden></div><label id="work-subject-label">По какому предмету?</label><div class="work-split" id="work-subject-split"><input id="work-subject-search" aria-label="Дисциплина" placeholder="Ввести дисциплину" maxlength="160"><button type="button" id="work-subject-presets" aria-label="Шаблоны дисциплин" aria-expanded="false">▼</button></div><div id="work-subjects" class="work-chips work-subjects" hidden></div><div id="custom-subject-editor" hidden><label for="custom-subject-name">Название шаблона</label><input id="custom-subject-name" maxlength="160"><button class="primary" id="save-custom-subject">Сохранить шаблон</button><p id="custom-subject-status" role="status"></p></div><label>Когда сдать?</label><div class="work-chips" id="work-dates"><button data-work-date="today">Сегодня</button><button data-work-date="tomorrow">Завтра</button><button data-work-date="next">К следующей паре</button><button data-work-date="choose">Дата…</button><button data-work-date="none" class="selected">Без срока</button></div><p id="work-date-label">Без срока</p><div id="work-reminder-row" hidden><label for="work-deadline-reminder">Напомнить о сроке · МСК</label><select id="work-deadline-reminder"><option value="">Без напоминания</option><option value="evening">Накануне в 19:00</option><option value="morning">В день сдачи в 08:00</option></select></div><label class="work-major-row"><span><b>Крупная работа</b><small>Конфетти при выполнении</small></span><input type="checkbox" id="work-major"></label><details><summary>Номер и подробности · необязательно</summary><input id="work-number" maxlength="30" placeholder="Например, № 4"><textarea id="work-comment" rows="2" maxlength="1000" placeholder="Что именно сделать"></textarea></details><button class="primary" id="save-work-template">Добавить работу</button>');
@@ -94,7 +95,7 @@ addTask=function(subjectPreset, options={}){
  }
  function setDue(value,key){dueChanged=true;due=value;$('#work-reminder-row').hidden=!due;$('#work-date-label').textContent=value?new Date(value+'T12:00:00').toLocaleDateString('ru',{day:'numeric',month:'long',year:'numeric'}):'Без срока';$$('[data-work-date]').forEach(b=>b.classList.toggle('selected',b.dataset.workDate===key))}
  $$('[data-work-date]').forEach(b=>b.onclick=()=>{const key=b.dataset.workDate;if(key==='choose'){openThemedDatePicker(due,value=>setDue(value,'choose'));return}if(key==='next'){const value=nextCourseDate(custom||subject,kind);if(!value){toast(workLessonType(kind)?'В расписании на 35 дней нет подходящего занятия: '+workLessonType(kind)+'. Выбери дату вручную.':'Ближайшая пара по предмету не найдена');return}setDue(value,key);return}const date=new Date();if(key==='tomorrow')date.setDate(date.getDate()+1);setDue(key==='none'?'':dateKey(date),key)});
- if (options.dueToday || original?.dueISO) {
+ if (due) {
   const tomorrow=new Date(); tomorrow.setDate(tomorrow.getDate()+1);
   setDue(due,due===dateKey(new Date())?'today':due===dateKey(tomorrow)?'tomorrow':'choose');
  }
@@ -120,29 +121,74 @@ addTask=function(subjectPreset, options={}){
   if (initialNumber || original.comment) $('#modal details').open=true;
   if (!due && original.due && original.due!=='Без срока') $('#work-date-label').textContent=original.due;
  }
- $('#work-deadline-reminder').value=original?.deadlineReminder||'';
+ const extra=document.createElement('section');
+ extra.className='work-attachments';
+ extra.innerHTML='<label class="control-field">Название <input id="work-custom-title" maxlength="180"></label><div data-draft-files></div><button type="button" id="work-find-sdo">Найти материал в СДО</button>';
+ $('#work-intro').after(extra);
+ const titleInput=$('#work-custom-title');
+ titleInput.value=draft.title??original?.text??'';
+ if(draft.number!==undefined)$('#work-number').value=draft.number;
+ if(draft.comment!==undefined)$('#work-comment').value=draft.comment;
+ if(draft.major!==undefined){$('#work-major').checked=draft.major;majorTouched=true}
+ if(draft.number||draft.comment)$('#modal details').open=true;
+ const fileIds=new Set(draft.fileIds||[]);
+ function paintFiles(){
+  const root=extra.querySelector('[data-draft-files]');
+  root.replaceChildren();
+  for(const id of fileIds){
+   const file=state.sdo.items.find(row=>row.id===id);
+   if(!file)continue;
+   const line=document.createElement('div');
+   line.className='sdo-task-item';
+   const label=document.createElement('span');
+   label.textContent=file.title;
+   const remove=document.createElement('button');
+   remove.type='button';remove.textContent='Убрать';
+   remove.onclick=()=>{fileIds.delete(id);paintFiles()};
+   line.append(label,remove);root.append(line);
+  }
+ }
+ paintFiles();
+ const source=canonicalSdoLink(draft.source||original?.sdoUrl);
+ if(source){
+  const link=document.createElement('a');
+  link.href=source;link.dataset.sdoPortal='';link.textContent='Открыть задание в СДО';
+  extra.append(link);
+ }
+ const snapshot=()=>({workId:original?.workId||'',kind,subject:custom||subject,title:titleInput.value,
+  dueISO:due,number:$('#work-number').value,comment:$('#work-comment').value,major:$('#work-major').checked,
+  deadlineReminder:$('#work-deadline-reminder').value,fileIds:[...fileIds],source});
+ $('#work-find-sdo').onclick=()=>window.openStudyMaterialPicker?.(snapshot());
+ $('#work-deadline-reminder').value=draft.deadlineReminder??original?.deadlineReminder??'';
  dueChanged=false;
- function saveWork(attach=false){
+ function saveWork(attach=false,synchronize=false){
   if(attach&&!due){$('#new-work-file-status').textContent='Выбери срок, чтобы прикрепить файл к событию.';return}
   if(attach&&!state.calendarAutoSync?.tasks){$('#new-work-file-status').textContent='Сначала включи синхронизацию задач с Google Календарём в настройках.';return}
   const discipline=custom||subject;
   if(!discipline||!kind){toast('Введи вид работы и предмет');return}
   const number=$('#work-number').value.trim();
-  const title=original && kind===initialKind && number===initialNumber ? original.text : kind+(number?' '+number:'');
+  const title=titleInput.value.trim()||(original && kind===initialKind && number===initialNumber ? original.text : kind+(number?' '+number:''));
   const deadline=due?new Date(due+'T12:00:00').toLocaleDateString('ru',{day:'numeric',month:'long'}):'Без срока';
-  const fields={text:title,kind,deadlineReminder:due?$('#work-deadline-reminder').value:'',major:$('#work-major').checked,subject:discipline,dueISO:due,due:original&&!dueChanged&&original.due?original.due:deadline,comment:$('#work-comment').value.trim()};
+  const fields={text:title,kind,sdoUrl:source,deadlineReminder:due?$('#work-deadline-reminder').value:'',major:$('#work-major').checked,subject:discipline,dueISO:due,due:original&&!dueChanged&&due===(original.dueISO||'')&&original.due?original.due:deadline,comment:$('#work-comment').value.trim()};
   let previous, index, newTask;
+  const oldSdo=state.sdo;
+  const workId=original?.workId||sdoNewId('work_');
   if (original) {
    index=state.tasks.findIndex(task=>task.workId===original.workId);
    if(index<0 || state.tasks[index].done){toast('Работа уже выполнена или удалена');return}
    previous=state.tasks[index];
    state.tasks[index]={...previous,...fields};
-  } else {newTask={...fields,done:false};state.tasks.push(newTask)}
+  } else {newTask={...fields,workId,done:false};state.tasks.push(newTask)}
+  const linked=[...new Set([...(state.sdo.attachments[workId]||[]),...fileIds])];
+  if(linked.length>50){toast('К задаче можно прикрепить до 50 материалов.');if(original)state.tasks[index]=previous;else state.tasks.pop();return}
+  if(linked.length)state.sdo=cleanSdoProfile({...state.sdo,attachments:{...state.sdo.attachments,[workId]:linked}});
   if(!save()){
+   state.sdo=oldSdo;
    if(original)state.tasks[index]=previous;
    else state.tasks.pop();
    return;
   }
+  window.clearStudyDraft?.();
   $('#modal').close();
   renderTasks();
   refreshWorkCards();
@@ -151,9 +197,20 @@ addTask=function(subjectPreset, options={}){
    const created=state.tasks.find(task=>task===newTask);
    if(created){addTask(null,{workId:created.workId});$('#work-attachment-action')?.click();return}
   }
-  toast(original?'Изменения сохранены':'Работа добавлена');
+  if(synchronize)window.showStudySync?.(state.tasks.find(task=>task.workId===workId),true);
+  else toast(original?'Изменения сохранены':'Работа добавлена');
  }
  $('#save-work-template').onclick=()=>saveWork();
+ const actions=document.createElement('div');
+ actions.className='work-chips';
+ actions.innerHTML='<button type="button" id="work-save-sync">Сохранить и синхронизировать</button><button type="button" id="work-ai">Разобрать с ИИ</button>';
+ $('#save-work-template').after(actions);
+ $('#work-save-sync').onclick=()=>saveWork(false,true);
+ $('#work-ai').onclick=()=>{
+  const value=snapshot();
+  window.showStudyAi?.({...value,text:value.title||value.kind,sdoUrl:value.source},value.fileIds,value);
+ };
+ window.showSavedStudyDraft?.(extra,original?.workId||'',options.draft);
  if(window.OrbitaAndroid?.attachWorkFile){
   if(original)showWorkAttachmentControls(original);
   else{

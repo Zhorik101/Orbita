@@ -28,3 +28,4 @@
 }
 .sdo-file-name { overflow-wrap:anywhere;font-size:14px;line-height:1.35 }
 .sdo-file-list .sdo-action { justify-self:end;white-space:nowrap }
+.sdo-assignment-description { white-space:pre-wrap;overflow-wrap:anywhere }

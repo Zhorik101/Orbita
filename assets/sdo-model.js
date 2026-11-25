@@ -48,8 +48,10 @@ function cleanSdoProfile(value){
   const courseId=typeof input.courseId==='string'&&/^sdo_[a-f0-9]{32}$/.test(input.courseId)?input.courseId:'';
   items.push({id:input.id,title,url,document,courseId,
    assignmentId:typeof input.assignmentId==='string'&&/^sdo_[a-f0-9]{32}$/.test(input.assignmentId)?input.assignmentId:'',
+   sourceId:typeof input.sourceId==='string'&&/^sdo_[a-f0-9]{32}$/.test(input.sourceId)?input.sourceId:'',
    source:input.source==='portal'?'portal':'manual',
    kind:courseUrl?'course':Object.hasOwn(sdoKinds,input.kind)&&input.kind!=='course'?input.kind:'other',
+   description:typeof input.description==='string'?input.description.trim().slice(0,1000):'',
    section:typeof input.section==='string'?input.section.trim().slice(0,100):'',
    discipline:sdoDiscipline(input.discipline),disciplineEdited:input.disciplineEdited===true,favorite:!!input.favorite,
    extension:sdoFilesTypes.has(input.extension)?input.extension:'',

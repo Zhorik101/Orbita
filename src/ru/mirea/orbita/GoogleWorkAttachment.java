@@ -329,7 +329,22 @@ final class GoogleWorkAttachment {
         JSONObject attachment;
         if(picked!=null){
             if(cached.optJSONObject("pending")!=null)throw new Failure("Сначала повтори прикрепление предыдущего файла.");
-            attachment=upload(picked,token);
+            String sourceKey = (activity.getPackageName()+".materials").equals(picked.getAuthority())
+                ? CalendarImport.hash(picked.getEncodedPath()) : "";
+            attachment=null;
+            if (!sourceKey.isEmpty() && target.account.equals(cached.optString("account"))) {
+                for (int i=0;i<attachedFiles.length();i++) {
+                    JSONObject existing=attachedFiles.optJSONObject(i);
+                    if (existing!=null && sourceKey.equals(existing.optString("sourceKey"))) {
+                        attachment=existing;
+                        break;
+                    }
+                }
+            }
+            if (attachment==null) {
+                attachment=upload(picked,token);
+                if (!sourceKey.isEmpty()) attachment.put("sourceKey",sourceKey);
+            }
             cached.put("pending",attachment).put("files",attachedFiles).put("account",target.account);
             if(!storage().edit().putString(id,cached.toString()).remove("source:"+id).commit())throw new Failure("Не удалось сохранить данные файла. Загруженный файл остался на Диске.");
             try { activity.getContentResolver().releasePersistableUriPermission(picked,Intent.FLAG_GRANT_READ_URI_PERMISSION); }

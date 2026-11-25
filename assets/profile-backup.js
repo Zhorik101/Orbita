@@ -22,7 +22,7 @@ const backupObjects={
  officialGroup:{id:'id',title:'string',target:'number'}
 };
 const backupTaskFields={
- workId:'string',text:'string',kind:'string',subject:'string',due:'string',dueISO:'string',
+ workId:'string',sdoUrl:'string',text:'string',kind:'string',subject:'string',due:'string',dueISO:'string',
  comment:'string',major:'boolean',done:'boolean',doneAt:'number',number:'string'
 };
 const backupNoteFields={id:'string',title:'string',body:'string',updated:'number'};
@@ -42,7 +42,7 @@ function localBackupData(source){
  const list=(value,fields,required)=>Array.isArray(value)?value.map(item=>backupPick(item,fields))
   .filter(item=>required.some(key=>typeof item[key]==='string'&&item[key].trim())):[];
  const data={
-  tasks:list(source.tasks,backupTaskFields,['text']),
+  tasks:list(source.tasks,backupTaskFields,['text']).map(task=>({...task,sdoUrl:typeof canonicalSdoLink==='function'?canonicalSdoLink(task.sdoUrl):''})),
   ...(typeof cleanSdoProfile==='function'?{sdo:cleanSdoProfile(source.sdo)}:{}),
   ...(typeof cleanDebtMarks==='function'?{debtMarks:cleanDebtMarks(source.debtMarks),academicRetakes:cleanAcademicRetakes(source.academicRetakes)}:{}),
   ...(typeof controlEventList==='function'?{controlEvents:controlEventList(source.controlEvents)}:{}),

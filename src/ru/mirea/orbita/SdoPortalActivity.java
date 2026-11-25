@@ -56,6 +56,7 @@ public final class SdoPortalActivity extends Activity {
         startUrl = getIntent().getStringExtra("url");
         downloadId = getIntent().getStringExtra("sdoDownloadId");
         if (downloadId == null) downloadId = "";
+        if (!downloadId.isEmpty()) setResult(RESULT_CANCELED,new Intent().putExtra("sdoDownloadId",downloadId));
         batch = automaticSync && "https://online-edu.mirea.ru/my/courses.php".equals(startUrl);
         if (!SdoPortalLinks.portal(startUrl)) startUrl = SdoPortalLinks.HOME;
         if (Build.VERSION.SDK_INT < 28) { openBrowser(startUrl); finish(); return; }
@@ -348,6 +349,10 @@ public final class SdoPortalActivity extends Activity {
                 const section = (anchor.closest('li.section,[data-sectionid]')?.querySelector('h2,h3,h4')?.innerText || '').trim().slice(0,100);
                 links.push({url:href,title,section});
               }
+              const assignment = location.pathname === '/mod/assign/view.php'
+                ? document.querySelector('#intro, [data-region="activity-description"]') : null;
+              const description = assignment?.innerText?.trim();
+              if (description) links.push({description:description.slice(0,1000)});
               return links;
             })()
             """;
@@ -357,9 +362,14 @@ public final class SdoPortalActivity extends Activity {
                 var rawLinks = new org.json.JSONArray(raw);
                 var links = new org.json.JSONArray();
                 var seen = new java.util.HashSet<String>();
-                for (int i=0;i<Math.min(100,rawLinks.length());i++) {
+                String description="";
+                for (int i=0;i<Math.min(101,rawLinks.length());i++) {
                     var item = rawLinks.optJSONObject(i);
                     if (item==null) continue;
+                    if (path.equals("/mod/assign/view.php") && item.has("description")) {
+                        description=limited(item.optString("description"),1000);
+                        continue;
+                    }
                     String url=SdoPortalLinks.bookmark(item.optString("url"));
                     String file = inside || attachments ? SdoPortalLinks.fileLink(item.optString("url")) : "";
                     if (!file.isEmpty()) url=file;
@@ -378,13 +388,14 @@ public final class SdoPortalActivity extends Activity {
                     }
                     if (batch && links.length()==0) skipped++;
                 }
-                if (links.length()==0 && !(auto && syncPage != null)) {
+                if (links.length()==0 && description.isEmpty() && !(auto && syncPage != null)) {
                     if (auto && !attachments && attempt<10) portal.postDelayed(() -> importVisibleLinks(true,attempt+1,version),900);
                     else showStatus("На странице пока нет видимых ссылок. Проверь вход и фильтры СДО.");
                     return;
                 }
                 var payload = new org.json.JSONObject().put("course",inside?course:"").put("title",limited(portal.getTitle(),180)).put("links",links);
                 if (attachments) payload.put("parent",course);
+                if (!description.isEmpty()) payload.put("description",description);
                 if (auto && batch) {
                     if (syncPage == null) {
                         appendSyncResult(payload);

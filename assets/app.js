@@ -24,7 +24,7 @@ function recoverySnapshot(original,profile){
   schemaVersion:orbitaSchemaVersion,
   previousSchemaVersion:Number.isInteger(original.schemaVersion)?original.schemaVersion:0,
   savedAt:new Date().toISOString(),
-  tasks:project(profile.tasks,['text','kind','subject','due','dueISO','comment','major','done','workId']),
+  tasks:project(profile.tasks,['text','kind','subject','due','dueISO','comment','major','done','workId','sdoUrl']),
   notes:Object.fromEntries(Object.entries(profile.notes).filter(([,value])=>typeof value==='string')),
   notebooks:project(profile.notebooks,['id','title','body','updated']),
   controlEvents:profile.controlEvents||[],

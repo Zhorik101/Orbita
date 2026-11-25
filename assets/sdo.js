@@ -97,7 +97,11 @@ window.orbitaSdoPortalImport=json=>{
  let currentCourse=null, refreshedItem=null;
  for(const result of pages){
   if(!Array.isArray(result?.links))continue;
-  const parent=seen.get(canonicalSdoLink(result.parent));
+  let parent=seen.get(canonicalSdoLink(result.parent));
+  if(parent?.kind==='assignment'&&typeof result.description==='string'&&result.description.trim()){
+   const updated={...parent,description:result.description.trim().slice(0,1000)};
+   items[items.indexOf(parent)]=updated;seen.set(updated.url,updated);parent=updated;
+  }
   const portalCourse=canonicalSdoLink(result.course)||items.find(entry=>parent?.courseId===entry.id)?.url||'';
   let course=portalCourse&&portalCourse.includes('/course/view.php?')?seen.get(portalCourse):null;
   if(portalCourse&&!course&&portalCourse.includes('/course/view.php?')){
@@ -318,12 +322,13 @@ window.orbitaSdoDownloaded=(sourceId,id)=>{
  if(!file){toast('Файл скачан. Открой локальную библиотеку.');return}
  if(source){
   const next={...file,courseId:file.courseId||source.courseId,assignmentId:file.assignmentId||source.assignmentId,
-   discipline:file.discipline||sdoDisciplineOf(source)};
-  if(next.courseId!==file.courseId||next.assignmentId!==file.assignmentId||next.discipline!==file.discipline)updateSdoItem(next);
+   discipline:file.discipline||sdoDisciplineOf(source),sourceId:file.sourceId||sourceId};
+  if(next.courseId!==file.courseId||next.assignmentId!==file.assignmentId||next.discipline!==file.discipline||next.sourceId!==file.sourceId)updateSdoItem(next);
  }
  if(page==='mini-sdo')paintSdo();
  window.paintDiscipline?.();
  const item=state.sdo.items.find(entry=>entry.id===id);
+ if(window.finishStudyDownload?.(sourceId,id))return;
  const discipline=sdoDisciplineOf(item);
  const tasks=state.tasks.filter(task=>task.workId&&!task.done)
   .sort((left,right)=>Number(right.subject===discipline?.name)-Number(left.subject===discipline?.name));
@@ -432,9 +437,13 @@ function setSdoAttachment(taskId,id,attach=true){
  return saveSdo({...state.sdo,attachments:next});
 }
 function newSdoTask(item){
- const linked=state.tasks.find(task=>(state.sdo.attachments[task.workId]||[]).includes(item.id));
+ const linked=state.tasks.find(task=>task.sdoUrl&&task.sdoUrl===item.url||(state.sdo.attachments[task.workId]||[]).includes(item.id));
  if(linked){
   if(linked.done)toast('Связанная задача уже выполнена.');else addTask(null,{workId:linked.workId});
+  return;
+ }
+ if(item.kind==='assignment'){
+  addTask(null,{draft:{title:item.title,subject:sdoDisciplineOf(item)?.name||'Личное',kind:'Задание СДО',source:item.url,comment:item.description||'',fileIds:[item.id]}});
   return;
  }
  const previous=state.tasks;
@@ -457,6 +466,7 @@ function showSdoItem(item){
  const tasks=state.tasks.filter(task=>task.workId&&!task.done);
  const linked=state.tasks.some(task=>(state.sdo.attachments[task.workId]||[]).includes(item.id));
  modal(`<h2>${safe(item.title)}</h2><p>${safe(sdoItemText(item))}</p>${item.section?`<p>${safe(item.section)}</p>`:''}
+  ${item.description?`<details><summary>Условие из СДО</summary><p class="sdo-assignment-description">${safe(item.description)}</p></details>`:''}
   <div class="work-chips">
   ${item.document?file?'<button type="button" id="sdo-open-file">Открыть офлайн</button><button type="button" id="sdo-export-file">Экспорт файла</button><button type="button" id="sdo-remove-file">Удалить локальную копию</button>':
    '<p>Файл не входит в JSON-копию. Импортируй его с устройства, чтобы восстановить открытие.</p>':sdoDownloadable(item)?sdoDownloadLink(item):sdoExternal(item.url,'Открыть оригинал в СДО')}
