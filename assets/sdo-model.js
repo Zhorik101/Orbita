@@ -11,6 +11,9 @@ function canonicalSdoLink(value){
   const url=new URL(value.trim());
   if(url.origin!=='https://'+sdoHost||url.username||url.password)return '';
   const route=url.pathname;
+  if(value.length<=1000&&/^[/]pluginfile[.]php[/][0-9]+[/][a-z][a-z0-9_]+[/][a-z][a-z0-9_]+[/].+/.test(route)&&
+     route.split('/').every(part=>!/[/\\\x00-\x1f\x7f]/.test(decodeURIComponent(part))&&
+      !['.','..'].includes(decodeURIComponent(part))))return url.origin+route;
   const id=url.searchParams.get('id');
   if((route==='/course/view.php'||/^\/mod\/[a-z][a-z0-9_]{0,38}\/view\.php$/.test(route))&&
      /^\d{1,15}$/.test(id||'')&&url.searchParams.getAll('id').length===1){

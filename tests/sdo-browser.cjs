@@ -128,6 +128,28 @@ const {chromium}=require('playwright');
   assert.equal(imported.length,2);
   assert.equal(imported.find(item=>item.kind==='course').discipline,null);
   assert(!JSON.stringify(imported).includes('secret'));
+  await page.evaluate(()=>{
+   const course='https://online-edu.mirea.ru/course/view.php?id=99';
+   const parent='https://online-edu.mirea.ru/mod/assign/view.php?id=17';
+   const url='https://online-edu.mirea.ru/pluginfile.php/13/mod_assign/introattachment/0/Practice.pdf';
+   const other='https://online-edu.mirea.ru/course/view.php?id=100';
+   const reply=JSON.stringify({pages:[
+    {links:[{url:other,title:'Другой курс'}]},
+    {course,parent,links:[{url:url+'?token=secret',title:'Методичка СДО'}]},
+    {course:other,links:[{url:'https://online-edu.mirea.ru/mod/resource/view.php?id=22',title:'Файл второго курса'}]}
+   ]});
+   window.orbitaSdoPortalImport(reply);
+   window.orbitaSdoPortalImport(reply);
+  });
+  const files=await page.evaluate(()=>state.sdo.items.filter(item=>item.title==='Методичка СДО'));
+  assert.equal(files.length,1);
+  assert.equal(files[0].assignmentId,imported.find(item=>item.kind==='assignment').id);
+  assert(!files[0].url.includes('secret'));
+  await page.evaluate(()=>window.openSdo());
+  await page.getByRole('button',{name:/Другой курс/}).click();
+  assert.match(await page.locator('#sdo-content').innerText(),/Файл второго курса/);
+  assert.equal(await page.getByRole('link',{name:'Скачать ↗',exact:true}).getAttribute('href'),
+   'https://online-edu.mirea.ru/mod/resource/view.php?id=22');
   assert.deepEqual(errors,[]);
   console.log('PASS saved SDO links, manual course structure, task linking, import cancellation, offline bridge, profile and mobile UI');
  }finally{await browser.close()}

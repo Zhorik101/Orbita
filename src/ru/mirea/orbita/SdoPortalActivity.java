@@ -35,11 +35,21 @@ public final class SdoPortalActivity extends Activity {
     private String startUrl;
     private boolean mainPageFailed, automaticSync;
     private int navigationVersion;
+    private record SyncPage(String url, String course) {}
+    private final java.util.ArrayDeque<SyncPage> syncQueue = new java.util.ArrayDeque<>();
+    private final java.util.HashSet<String> queued = new java.util.HashSet<>();
+    private final org.json.JSONArray syncResults = new org.json.JSONArray();
+    private SyncPage syncPage;
+    private int visited, skipped, resultSize;
+    private boolean batch;
+    private static final int MAX_SYNC_PAGES = 120;
+    private static final int MAX_SYNC_RESULT = 160_000;
 
     @Override public void onCreate(Bundle saved) {
         super.onCreate(saved);
         automaticSync = getIntent().getBooleanExtra("sync",false);
         startUrl = getIntent().getStringExtra("url");
+        batch = automaticSync && "https://online-edu.mirea.ru/my/courses.php".equals(startUrl);
         if (!SdoPortalLinks.portal(startUrl)) startUrl = SdoPortalLinks.HOME;
         if (Build.VERSION.SDK_INT < 28) { openBrowser(startUrl); finish(); return; }
         if (!isolated) {
@@ -71,6 +81,7 @@ public final class SdoPortalActivity extends Activity {
         status.setPadding(16,8,16,8);
         status.setVisibility(View.GONE);
         root.addView(status);
+        if (batch) root.addView(button("Завершить и сохранить найденное", v -> finishSync()));
         portal = new WebView(this);
         WebSettings settings = portal.getSettings();
         settings.setJavaScriptEnabled(true);
@@ -107,24 +118,31 @@ public final class SdoPortalActivity extends Activity {
                 if (automaticSync && !mainPageFailed && SdoPortalLinks.portal(url)) {
                     String path = java.net.URI.create(url).getPath();
                     String requested = SdoPortalLinks.bookmark(startUrl);
-                    boolean validPage = requested.contains("/course/view.php?")
+                    boolean validPage = syncPage != null
+                        ? syncPage.url().equals(SdoPortalLinks.bookmark(url))
+                        : requested.contains("/course/view.php?")
                         ? requested.equals(SdoPortalLinks.bookmark(url))
                         : "/my/".equals(path) || "/my/courses.php".equals(path);
                     if (validPage) {
                         int version = navigationVersion;
-                        showStatus("Обновляем каталог по открытой странице СДО…");
+                        showStatus(syncPage == null ? "Обновляем каталог по открытой странице СДО…"
+                            : "СДО: проверено страниц " + visited + ", в очереди " + (syncQueue.size()+1));
                         view.postDelayed(() -> importVisibleLinks(true,0,version),900);
                     }
                 }
             }
             @Override public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
-                if (request.isForMainFrame()) showPortalError();
+                if (request.isForMainFrame()) {
+                    showPortalError();
+                    if (batch && syncPage != null) finishSync();
+                }
             }
             @Override public void onReceivedHttpError(WebView view, WebResourceRequest request, WebResourceResponse error) {
                 if (request.isForMainFrame()) showPortalError();
             }
         });
         portal.setDownloadListener((url, agent, disposition, mime, length) -> {
+            if (automaticSync) return;
             if (!SdoPortalLinks.directFile(url)) {
                 showStatus("Этот файл доступен через официальный браузер.");
                 return;
@@ -138,7 +156,9 @@ public final class SdoPortalActivity extends Activity {
         root.addView(portal, new LinearLayout.LayoutParams(-1, 0, 1));
         if (Build.VERSION.SDK_INT >= 30) getWindow().setDecorFitsSystemWindows(true);
         setContentView(root);
-        if (saved == null || portal.restoreState(saved)==null) portal.loadUrl(startUrl);
+        String file = SdoPortalLinks.fileLink(startUrl);
+        if (!file.isEmpty() && saved == null) download(file, settings.getUserAgentString(), null);
+        else if (batch || saved == null || portal.restoreState(saved)==null) portal.loadUrl(startUrl);
     }
 
     private Button button(String title, View.OnClickListener action) {
@@ -175,7 +195,8 @@ public final class SdoPortalActivity extends Activity {
         String course = SdoPortalLinks.bookmark(page);
         boolean inside = course.contains("/course/view.php?");
         String path = java.net.URI.create(page).getPath();
-        if (!inside && !"/my/".equals(path) && !"/my/courses.php".equals(path)) {
+        boolean attachments = path.equals("/mod/assign/view.php") || path.equals("/mod/folder/view.php");
+        if (!inside && !attachments && !"/my/".equals(path) && !"/my/courses.php".equals(path)) {
             showStatus("Открой «Мои курсы» или конкретный курс СДО для импорта ссылок.");
             return;
         }
@@ -183,20 +204,22 @@ public final class SdoPortalActivity extends Activity {
         String script = """
             (() => {
               const inside = location.pathname === '/course/view.php';
+              const attachments = ['/mod/assign/view.php','/mod/folder/view.php'].includes(location.pathname);
               if (location.origin !== 'https://online-edu.mirea.ru' ||
-                  (!inside && !['/my/','/my/courses.php'].includes(location.pathname))) return '';
+                  (!inside && !attachments && !['/my/','/my/courses.php'].includes(location.pathname))) return '';
               const seen = new Set(), links = [];
-              const catalog = !inside && document.querySelector('[data-region="courses-view"],[data-region="myoverview"],.block_myoverview');
+              const catalog = attachments ? document.querySelector('#region-main, [role="main"], main') : !inside && document.querySelector('[data-region="courses-view"],[data-region="myoverview"],.block_myoverview');
               for (const anchor of (catalog || document).querySelectorAll('a[href]')) {
                 if (links.length >= 100) break;
                 if (!anchor.getClientRects().length || getComputedStyle(anchor).visibility === 'hidden') continue;
                 let url;
                 try { url = new URL(anchor.href); } catch { continue; }
                 if (url.origin !== location.origin || url.username || url.password) continue;
+                const file = (inside || attachments) && /^[/]pluginfile[.]php[/][0-9]+[/](mod_assign[/]introattachment|mod_folder[/]content|mod_resource[/]content|mod_page[/]content|course[/]section)[/].+/.test(url.pathname);
                 const valid = inside ? /^\\/mod\\/[a-z][a-z0-9_]{0,38}\\/view\\.php$/.test(url.pathname) : url.pathname === '/course/view.php';
                 const ids = url.searchParams.getAll('id');
-                if (!valid || ids.length !== 1 || !/^[0-9]{1,15}$/.test(ids[0])) continue;
-                const href = url.origin + url.pathname + '?id=' + ids[0];
+                if (!file && (attachments || !valid || ids.length !== 1 || !/^[0-9]{1,15}$/.test(ids[0]))) continue;
+                const href = url.origin + url.pathname + (file ? '' : '?id=' + ids[0]);
                 const title = (anchor.innerText || anchor.getAttribute('aria-label') || '').trim().slice(0,180);
                 if (!title || seen.has(href)) continue;
                 seen.add(href);
@@ -216,16 +239,40 @@ public final class SdoPortalActivity extends Activity {
                     var item = rawLinks.optJSONObject(i);
                     if (item==null) continue;
                     String url=SdoPortalLinks.bookmark(item.optString("url"));
+                    String file = inside || attachments ? SdoPortalLinks.fileLink(item.optString("url")) : "";
+                    if (!file.isEmpty()) url=file;
                     String title=limited(item.optString("title"),180);
-                    if (url.isEmpty()||title.isEmpty()||inside==url.contains("/course/view.php?")||!seen.add(url)) continue;
+                    if (url.isEmpty()||title.isEmpty()||(file.isEmpty()&&(attachments||inside==url.contains("/course/view.php?")))||!seen.add(url)) continue;
                     links.put(new org.json.JSONObject().put("url",url).put("title",title).put("section",limited(item.optString("section"),100)));
                 }
-                if (links.length()==0) {
+                if (links.length()==0 && !(auto && syncPage != null)) {
                     if (auto && attempt<10) portal.postDelayed(() -> importVisibleLinks(true,attempt+1,version),900);
                     else showStatus("На странице пока нет видимых ссылок. Проверь вход и фильтры СДО.");
                     return;
                 }
                 var payload = new org.json.JSONObject().put("course",inside?course:"").put("title",limited(portal.getTitle(),180)).put("links",links);
+                if (auto && batch) {
+                    if (syncPage == null) {
+                        appendSyncResult(payload);
+                        for (int i=0;i<links.length();i++) {
+                            String url=links.getJSONObject(i).getString("url");
+                            enqueueSync(url,url);
+                        }
+                    } else if (attachments) {
+                        payload.put("course",syncPage.course()).put("parent",syncPage.url());
+                        appendSyncResult(payload);
+                    } else {
+                        appendSyncResult(payload);
+                        for (int i=0;i<links.length();i++) {
+                            String url=links.getJSONObject(i).getString("url");
+                            if (url.contains("/mod/assign/view.php?") || url.contains("/mod/folder/view.php?")) {
+                                enqueueSync(url,syncPage.course());
+                            }
+                        }
+                    }
+                    advanceSync();
+                    return;
+                }
                 if (auto) {
                     automaticSync=false;
                     setResult(RESULT_OK,new Intent().putExtra("sdoImport",payload.toString()));
@@ -238,9 +285,58 @@ public final class SdoPortalActivity extends Activity {
                         setResult(RESULT_OK,new Intent().putExtra("sdoImport",payload.toString()));
                         finish();
                     }).show();
-            } catch (Exception error) { showStatus("Не удалось прочитать ссылки открытой страницы."); }
+            } catch (Exception error) {
+                showStatus("Не удалось прочитать ссылки открытой страницы.");
+                if (auto && syncPage != null) { skipped++; advanceSync(); }
+            }
         });
     }
+    private void appendSyncResult(org.json.JSONObject payload) {
+        int size = payload.toString().length();
+        if (resultSize + size > MAX_SYNC_RESULT) { skipped++; return; }
+        syncResults.put(payload);
+        resultSize += size;
+    }
+
+    private void enqueueSync(String url,String course) {
+        if (!queued.add(url)) return;
+        if (queued.size() > MAX_SYNC_PAGES) { skipped++; return; }
+        syncQueue.addLast(new SyncPage(url,course));
+    }
+
+    private void advanceSync() {
+        if (!automaticSync || isFinishing()) return;
+        if (syncPage != null) visited++;
+        syncPage = syncQueue.pollFirst();
+        if (syncPage == null) { finishSync(); return; }
+        SyncPage next = syncPage;
+        // Use the signed-in WebView sequentially. No downloads are started by the scan.
+        portal.postDelayed(() -> {
+            if (!automaticSync || isFinishing() || syncPage != next) return;
+            portal.loadUrl(next.url());
+            portal.postDelayed(() -> {
+                if (!automaticSync || isFinishing() || syncPage != next) return;
+                if (!SdoPortalLinks.portal(portal.getUrl()) || portal.getUrl().contains("/login/")) {
+                    finishSync();
+                    return;
+                }
+                skipped++;
+                advanceSync();
+            },15000);
+        },600);
+    }
+
+    private void finishSync() {
+        if (!automaticSync || isFinishing()) return;
+        automaticSync=false;
+        try {
+            String payload = new org.json.JSONObject().put("pages",syncResults)
+                .put("skipped",skipped + syncQueue.size() + (syncPage == null ? 0 : 1)).toString();
+            setResult(RESULT_OK,new Intent().putExtra("sdoImport",payload));
+        } catch (org.json.JSONException ignored) {}
+        finish();
+    }
+
     private static String limited(String value,int limit) {
         if (value==null) return "";
         value=value.trim();
@@ -263,7 +359,11 @@ public final class SdoPortalActivity extends Activity {
             }).show();
     }
     private void showStatus(String text) { status.setText(text); status.setVisibility(View.VISIBLE); }
-    private void goBack() { if (portal != null && portal.canGoBack()) portal.goBack(); else finish(); }
+    private void goBack() {
+        if (automaticSync && syncPage != null) { finishSync(); return; }
+        if (portal != null && portal.canGoBack()) portal.goBack();
+        else finish();
+    }
     @Override public void onBackPressed() { goBack(); }
     @Override protected void onSaveInstanceState(Bundle out) {
         super.onSaveInstanceState(out);

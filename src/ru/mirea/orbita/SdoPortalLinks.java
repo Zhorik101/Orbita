@@ -37,6 +37,16 @@ final class SdoPortalLinks {
         return id != null && id.matches("[0-9]{1,15}") ? HOME + path.substring(1) + "?id=" + id : "";
     }
 
+    static String fileLink(String value) {
+        if (value == null || value.length() > 1000 || !directFile(value)) return "";
+        String path = URI.create(value).getRawPath();
+        for (String segment : path.split("/")) {
+            String decoded = URI.create("https://example.invalid/" + segment).getPath().substring(1);
+            if (decoded.equals(".") || decoded.equals("..") || decoded.matches(".*[\\\\/\\p{Cntrl}].*")) return "";
+        }
+        return HOME + path.substring(1);
+    }
+
     static boolean directFile(String value) {
         if (!portal(value)) return false;
         return URI.create(value).getRawPath().matches("/pluginfile\\.php/[0-9]+/[a-z][a-z0-9_]+/[a-z][a-z0-9_]+/.+");

@@ -201,6 +201,7 @@ public class MainActivity extends Activity {
         private void launchSdoPortal(String url,boolean sync) {
             if (!SdoPortalLinks.portal(url)) return;
             String page = SdoPortalLinks.bookmark(url);
+            if (page.isEmpty() && !sync) page = SdoPortalLinks.fileLink(url);
             if (page.isEmpty()) page = "https://online-edu.mirea.ru/my/courses.php".equals(url) ? url : SdoPortalLinks.HOME;
             String target = page;
             runOnUiThread(() -> startActivityForResult(new Intent(MainActivity.this,SdoPortalActivity.class)
@@ -613,7 +614,7 @@ public class MainActivity extends Activity {
                 String payload = data.getStringExtra("sdoImport");
                 String url = SdoPortalLinks.bookmark(data.getStringExtra("sdoUrl"));
                 String title = data.getStringExtra("sdoTitle");
-                String script = payload != null && payload.length() <= 50000
+                String script = payload != null && payload.length() <= 170000
                     ? "window.orbitaSdoPortalImport?.(" + JSONObject.quote(payload) + ")"
                     : url.isEmpty() ? "" : "window.orbitaSdoPortalBookmark?.(" +
                         JSONObject.quote(url) + "," + JSONObject.quote(title == null ? "" : title) + ")";

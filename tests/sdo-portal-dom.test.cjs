@@ -30,4 +30,8 @@ assert.equal(course.length,2);
 assert(course.every(item=>item.section==='Тема 1'));
 assert(!JSON.stringify(course).includes('SECRET'));
 assert.equal(scan('/login/index.php','<a href="/course/view.php?id=4">Химия</a>'),'');
+const homework=scan('/mod/assign/view.php?id=8','<main>'+
+ '<a href="/pluginfile.php/13/mod_assign/introattachment/0/Practice.pdf?token=SECRET">Методичка</a>'+
+ '<a href="/pluginfile.php/13/assignsubmission_file/submission_files/44/Private.pdf">Сданная работа</a></main>');
+assert.deepEqual(homework,[{url:'https://online-edu.mirea.ru/pluginfile.php/13/mod_assign/introattachment/0/Practice.pdf',title:'Методичка',section:''}]);
 console.log('PASS visible course links, section titles, duplicate and secret stripping in portal DOM fixture');
