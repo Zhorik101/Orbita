@@ -1,7 +1,16 @@
+const academicDebtsPage=createMiniPage('mini-academic-debts',`
+ <button type="button" class="mini-back" id="academic-debts-back">← Мини-приложения</button>
+ <div class="mini-heading"><h1>Долги</h1><p>Академические задолженности РТУ МИРЭА</p></div>
+ <section class="course-discipline discipline-panel">
+  <h2>Официальные данные о задолженностях недоступны</h2>
+  <p>Орбита не может подтвердить, есть ли задолженности. Результаты аттестации и информацию о пересдачах можно уточнить в личном кабинете студента.</p>
+  <a class="academic-debts-portal" href="https://lk.mirea.ru/auth.php">Личный кабинет МИРЭА ↗</a>
+ </section>`);
+$('#academic-debts-back').onclick=()=>showPage('miniapps');
 const debtsPage=createMiniPage('mini-debts',`
  <button type="button" class="mini-back" id="debts-back">← Назад</button>
- <div class="mini-heading"><h1>Долги</h1></div><div id="debts-content"></div>`);
-const debtFilters={all:'Все',overdue:'Просроченные',open:'Незавершённые',review:'Требуют проверки',official:'Официальные'};
+ <div class="mini-heading"><h1>Незавершённые работы</h1></div><div id="debts-content"></div>`);
+const debtFilters={all:'Все',overdue:'Просроченные',open:'Незавершённые',review:'Требуют проверки'};
 let debtScope=null,debtFilter='all',debtSort='date',debtSubject='';
 const debtDateOrder=(a,b)=>(a.date||'9999').localeCompare(b.date||'9999');
 const debtSubjectOrder=(a,b)=>a.subject.localeCompare(b.subject,'ru');
@@ -39,9 +48,9 @@ $('#debts-back').onclick=closeDebts;
 window.disciplineDebtsPanel=course=>{
  const rows=debtRows().filter(row=>debtMatchesCourse(row,course));
  const next=rows.map(row=>row.date).filter(Boolean).sort()[0];
- return disciplinePanel('Долги и незавершённые работы',`
+ return disciplinePanel('Незавершённые работы',`
   <p>${rows.length?`Записей: ${rows.length}${next?' · Ближайший срок: '+safe(debtDateLabel(next)):''}`:'Открытых записей нет.'}</p>
-  <button type="button" id="discipline-open-debts">Открыть долги</button>`);
+  <button type="button" id="discipline-open-debts">Открыть работы</button>`);
 };
 window.bindDisciplineDebts=(overview,course)=>{
  overview.querySelector('#discipline-open-debts').onclick=()=>openDebts(course);
@@ -85,8 +94,7 @@ function paintDebts(){
    ${debtScope?'':`<label class="control-field">Дисциплина <select id="debt-subject"><option value="">Все дисциплины</option>
    ${subjects.map(name=>`<option value="${safe(name)}"${name===debtSubject?' selected':''}>${safe(name)}</option>`).join('')}</select></label>`}
   </div>
-  ${debtFilter==='official'?'<p>Подтверждённый источник академических задолженностей МИРЭА пока недоступен.</p>'
-   :visible.map(debtCard).join('')||'<p>Под выбранные фильтры ничего не подходит.</p>'}`;
+  ${visible.map(debtCard).join('')||'<p>Под выбранные фильтры ничего не подходит.</p>'}`;
  const bindSelect=(id,set)=>{
   const select=$(id);
   if(select)select.onchange=()=>{set(select.value);paintDebts();$(id)?.focus()};
@@ -165,13 +173,19 @@ window.addDebtMarkAction=(key,anchor,returnTo)=>{
 const hubBeforeDebts=renderMiniHub;
 renderMiniHub=function(){
  hubBeforeDebts();
- const tile=document.createElement('button');
- tile.type='button';
- tile.className='mini-tile';
- tile.dataset.miniOpen='mini-debts';
- tile.innerHTML='<span class="mini-tile-top"><i>'+icon('check')+'</i><span>›</span></span><b>Долги</b><p>Просроченные работы и личные пометки</p>';
- tile.onclick=()=>openDebts();
- $('#mini-grid').appendChild(tile);
+ const entries=[
+  ['mini-academic-debts','Долги','Академические задолженности МИРЭА',()=>showPage('mini-academic-debts')],
+  ['mini-debts','Незавершённые работы','Личные задачи, МТК и пометки',()=>openDebts()]
+ ];
+ for(const [destination,title,caption,open] of entries){
+  const tile=document.createElement('button');
+  tile.type='button';
+  tile.className='mini-tile';
+  tile.dataset.miniOpen=destination;
+  tile.innerHTML='<span class="mini-tile-top"><i>'+icon('check')+'</i><span>›</span></span><b>'+title+'</b><p>'+caption+'</p>';
+  tile.onclick=open;
+  $('#mini-grid').appendChild(tile);
+ }
 };
 const pageBeforeDebts=showPage;
 showPage=function(destination){
@@ -181,6 +195,7 @@ showPage=function(destination){
 const backBeforeDebts=handleAppBack;
 handleAppBack=function(){
  if(page==='mini-debts'){closeDebts();return true}
+ if(page==='mini-academic-debts'){showPage('miniapps');return true}
  return backBeforeDebts();
 };
 $('#modal').addEventListener('close',paintDebts);

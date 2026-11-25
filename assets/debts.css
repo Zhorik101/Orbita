@@ -11,3 +11,10 @@
 .debt-actions { display: flex; flex-wrap: wrap; gap: 4px 12px; }
 .debt-scope { color: var(--text); font-weight: 600; }
 #debts-clear-scope { min-height: 44px; color: var(--accent); }
+
+.academic-debts-portal {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  color: var(--accent);
+}
