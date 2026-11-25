@@ -178,7 +178,7 @@ const {chromium}=require('playwright');
     {url:'https://online-edu.mirea.ru/pluginfile.php/33/mod_folder/content/0/Lecture.pdf',title:'Лекция без курса'}
    ]}));
   });
-  assert.match(await page.locator('#modal').innerText(),/Скачать «Лекция без курса»/);
+  assert.match(await page.locator('#modal').innerText(),/Лекция без курса/);
   assert.deepEqual(errors,[]);
   console.log('PASS saved SDO links, manual course structure, task linking, import cancellation, offline bridge, profile and mobile UI');
  }finally{await browser.close()}

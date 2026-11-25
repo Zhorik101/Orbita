@@ -4,6 +4,8 @@ import java.nio.file.Files;
 
 public class SdoStlTest {
     public static void main(String[] args) throws Exception {
+        if (!SdoPortalDownload.acceptedMime("application/pdf", "application/force-download")
+            || SdoPortalDownload.acceptedMime("application/pdf", "text/html")) throw new AssertionError();
         var file = Files.createTempFile("orbita-model-", ".stl");
         try {
             var binary = new byte[134];

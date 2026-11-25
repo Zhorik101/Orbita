@@ -42,12 +42,9 @@ final class SdoPortalDownload {
                 if (mime==null) throw new IOException();
                 mime=mime.split(";",2)[0].trim().toLowerCase(Locale.ROOT);
                 if (mime.contains("html")||mime.contains("xml")&&!mime.contains("openxmlformats")) throw new IOException();
-                String name=URLUtil.guessFileName(url,serverDisposition==null?disposition:serverDisposition,mime)
-                    .replace('/','_').replace('\\','_').replaceAll("\\p{Cntrl}","_");
+                String name=documentName(url,serverDisposition==null?disposition:serverDisposition,mime);
                 String documentMime=type(name);
-                if (documentMime.isEmpty() || !mime.equals(documentMime) && !mime.equals("application/octet-stream")
-                    && !mime.equals("binary/octet-stream") && !mime.equals("application/x-zip-compressed")
-                    && !stlMime(documentMime,mime)) throw new IOException();
+                if (documentMime.isEmpty() || !acceptedMime(documentMime,mime)) throw new IOException();
                 if (name.length()>160) name=name.substring(0,150)+name.substring(name.lastIndexOf('.'));
                 long expected=connection.getContentLengthLong();
                 if (expected>MAX || cache.getUsableSpace()<Math.max(expected,0)+8388608L) throw new IOException();
@@ -64,6 +61,25 @@ final class SdoPortalDownload {
             } finally { connection.disconnect(); }
         }
         throw new IOException();
+    }
+
+    private static String documentName(String url,String disposition,String mime) {
+        String name=safeName(URLUtil.guessFileName(url,disposition,mime));
+        if (!type(name).isEmpty()) return name;
+        String path=URI.create(url).getPath();
+        return safeName(path.substring(path.lastIndexOf('/')+1));
+    }
+
+    private static String safeName(String name) {
+        return name.replace('/','_').replace('\\','_').replaceAll("\\p{Cntrl}","_").trim();
+    }
+
+    static boolean acceptedMime(String expected,String actual) {
+        return expected.equals(actual) || actual.equals("application/octet-stream")
+            || actual.equals("binary/octet-stream") || actual.equals("application/force-download")
+            || actual.equals("application/download")
+            || expected.equals("application/zip") && actual.equals("application/x-zip-compressed")
+            || stlMime(expected,actual);
     }
 
     private static String type(String name) {

@@ -174,8 +174,8 @@ function sdoItemText(item){
 function sdoDownloadable(item){
  return item.url.includes('/pluginfile.php/') || item.url.includes('/mod/resource/view.php?');
 }
-function sdoDownloadLink(item,text='Скачать'){
- return `<a class="sdo-action" data-sdo-portal data-sdo-download="${safe(item.id)}" href="${safe(item.url)}">${safe(text)} ↗</a>`;
+function sdoDownloadLink(item,text='Скачать',label=text){
+ return `<a class="sdo-action" data-sdo-portal data-sdo-download="${safe(item.id)}" aria-label="${safe(label)}" href="${safe(item.url)}">${safe(text)} ↗</a>`;
 }
 function sdoItemHtml(item){
  return `<article class="course-discipline sdo-item">
@@ -462,7 +462,11 @@ function showSdoItem(item){
    '<button type="button" id="sdo-sync-materials">Обновить файлы</button>':''}
   ${item.kind==='assignment'?`<button type="button" id="sdo-new-task">${linked?'Открыть связанную задачу':'Создать личную задачу'}</button>
    ${window.OrbitaAndroid?.importSdoFiles?'<button type="button" id="sdo-import-assignment">Импортировать вложения задания</button>':''}`:''}</div>
-  ${files.length?`<h3>${item.kind==='assignment'?'Материалы задания':'Файлы'}</h3>${files.map(row=>sdoDownloadable(row)?sdoDownloadLink(row,'Скачать «'+row.title+'»'):`<button type="button" class="sdo-item-title" data-assignment-material="${row.id}">${safe(row.title)}</button>`).join('')}`:''}
+  ${files.length?`<h3>${item.kind==='assignment'?'Материалы задания':'Файлы'} <small class="sdo-file-count">${files.length}</small></h3>
+   <ul class="sdo-file-list">${[...files].sort((a,b)=>a.title.localeCompare(b.title,'ru',{numeric:true})).map(row=>
+    `<li><span class="sdo-file-name">${safe(row.title)}</span>${sdoDownloadable(row)?
+      sdoDownloadLink(row,'Скачать','Скачать «'+row.title+'»'):
+      `<button type="button" data-assignment-material="${row.id}">Открыть</button>`}</li>`).join('')}</ul>`:''}
   ${item.kind==='folder'&&!files.length?'<p>Список файлов ещё не загружен. Нажми «Обновить файлы».</p>':''}
   ${tasks.length?`<label class="control-field">Личная задача <select id="sdo-task-choice">${tasks.map((task,i)=>
    `<option value="${i}">${safe(task.text)}</option>`).join('')}</select></label>

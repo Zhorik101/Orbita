@@ -42,6 +42,9 @@ public final class SdoPortalActivity extends Activity {
     private SyncPage syncPage;
     private int visited, skipped, resultSize;
     private boolean batch;
+    private int surface, foreground, control;
+    private android.widget.ProgressBar progress;
+    private View retry;
     private static final int MAX_SYNC_PAGES = 120;
     private static final int MAX_SYNC_RESULT = 160_000;
 
@@ -63,26 +66,60 @@ public final class SdoPortalActivity extends Activity {
             if (pending.matches("sdo-portal-[0-9]+\\.part")) pendingFile = new File(stagingFolder(), pending);
         }
 
+        boolean dark = (getResources().getConfiguration().uiMode & 0x30) == 0x20;
+        surface = dark ? 0xff202124 : 0xfff5f6f8;
+        foreground = dark ? 0xfff1f3f4 : 0xff202124;
+        control = dark ? 0xff35383f : 0xffe4e8ee;
+        getWindow().setStatusBarColor(surface);
+        getWindow().setNavigationBarColor(surface);
+        getWindow().getDecorView().setSystemUiVisibility(dark ? 0
+            : View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR | View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR);
+
         var root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
+        root.setBackgroundColor(surface);
         var bar = new LinearLayout(this);
+        bar.setGravity(android.view.Gravity.CENTER_VERTICAL);
+        bar.setPadding(dp(12),dp(8),dp(12),dp(8));
         bar.addView(button("Назад", v -> goBack()));
-        bar.addView(button("Браузер", v -> openBrowser(safePortalPage())));
+        var heading = new TextView(this);
+        heading.setText(downloadId.isEmpty() ? "СДО МИРЭА" : "Загрузка файла");
+        heading.setTextSize(18);
+        heading.setTextColor(foreground);
+        heading.setPadding(dp(12),0,0,0);
+        bar.addView(heading,new LinearLayout.LayoutParams(0,-2,1));
         bookmark = button("Сохранить ссылку", v -> saveBookmark());
-        bar.addView(bookmark);
+        var menu = button("Меню", v -> showMenu(v));
+        bar.addView(menu);
         root.addView(bar);
-        var actions = new LinearLayout(this);
-        actions.addView(button("Обновить", v -> portal.reload()));
-        actions.addView(button("Выйти", v -> clearSession()));
-        actions.addView(button("Импорт ссылок", v -> importVisibleLinks(false,0,navigationVersion)));
+
+        var panel = new LinearLayout(this);
+        panel.setOrientation(LinearLayout.VERTICAL);
+        panel.setPadding(dp(16),dp(8),dp(16),dp(12));
+        status = new TextView(this);
+        status.setTextSize(15);
+        status.setTextColor(foreground);
+        status.setPadding(0,dp(8),0,dp(12));
+        status.setVisibility(View.GONE);
+        panel.addView(status);
+        progress = new android.widget.ProgressBar(this,null,android.R.attr.progressBarStyleHorizontal);
+        progress.setIndeterminate(true);
+        progress.setVisibility(View.GONE);
+        panel.addView(progress,new LinearLayout.LayoutParams(-1,dp(8)));
         cancel = button("Отменить загрузку", v -> { cancelled = true; showStatus("Отменяем загрузку…"); });
         cancel.setVisibility(View.GONE);
-        actions.addView(cancel);
-        root.addView(actions);
-        status = new TextView(this);
-        status.setPadding(16,8,16,8);
-        status.setVisibility(View.GONE);
-        root.addView(status);
+        panel.addView(cancel);
+        retry = button("Повторить", v -> beginDownload());
+        retry.setVisibility(View.GONE);
+        panel.addView(retry);
+        var login = button("Открыть СДО и войти", v -> {
+            portal.setVisibility(View.VISIBLE);
+            portal.loadUrl(SdoPortalLinks.HOME);
+            showStatus("После входа нажми «Повторить».");
+        });
+        login.setVisibility(downloadId.isEmpty() ? View.GONE : View.VISIBLE);
+        panel.addView(login);
+        root.addView(panel);
         if (batch) root.addView(button("Завершить и сохранить найденное", v -> finishSync()));
         portal = new WebView(this);
         WebSettings settings = portal.getSettings();
@@ -120,6 +157,9 @@ public final class SdoPortalActivity extends Activity {
                 if (!SdoPortalLinks.trusted(url)) view.stopLoading();
             }
             @Override public void onPageFinished(WebView view, String url) {
+                if (!downloadId.isEmpty() && !transferring && !mainPageFailed
+                        && SdoPortalLinks.bookmark(startUrl).equals(SdoPortalLinks.bookmark(url))
+                        && startUrl.contains("/mod/resource/view.php?")) resolveResource(view);
                 bookmark.setEnabled(!mainPageFailed && !SdoPortalLinks.bookmark(url).isEmpty());
                 if (automaticSync && !mainPageFailed && SdoPortalLinks.portal(url)) {
                     String path = java.net.URI.create(url).getPath();
@@ -163,15 +203,83 @@ public final class SdoPortalActivity extends Activity {
         root.addView(portal, new LinearLayout.LayoutParams(-1, 0, 1));
         if (Build.VERSION.SDK_INT >= 30) getWindow().setDecorFitsSystemWindows(true);
         setContentView(root);
-        String file = SdoPortalLinks.fileLink(startUrl);
-        if (!file.isEmpty() && saved == null) download(file, settings.getUserAgentString(), null);
-        else if (batch || saved == null || portal.restoreState(saved)==null) portal.loadUrl(startUrl);
+        if (!downloadId.isEmpty()) beginDownload();
+        else if (batch || saved == null || portal.restoreState(saved)==null) {
+            String file = SdoPortalLinks.fileLink(startUrl);
+            if (file.isEmpty()) portal.loadUrl(startUrl);
+            else download(file,settings.getUserAgentString(),null);
+        }
     }
+
+    private int dp(int value) { return Math.round(value*getResources().getDisplayMetrics().density); }
 
     private Button button(String title, View.OnClickListener action) {
         var button = new Button(this);
-        button.setText(title); button.setAllCaps(false); button.setOnClickListener(action);
+        var background = new android.graphics.drawable.GradientDrawable();
+        background.setColor(control);
+        background.setCornerRadius(dp(14));
+        button.setBackground(new android.graphics.drawable.RippleDrawable(
+            android.content.res.ColorStateList.valueOf(0x22000000),background,null));
+        button.setPadding(dp(12),0,dp(12),0);
+        button.setMinHeight(dp(44));
+        button.setTextColor(foreground);
+        button.setText(title);
+        button.setAllCaps(false);
+        button.setOnClickListener(action);
         return button;
+    }
+
+    private void showMenu(View anchor) {
+        var menu = new android.widget.PopupMenu(this,anchor);
+        addMenu(menu,"Открыть в браузере",() -> openBrowser(safePortalPage()));
+        addMenu(menu,"Обновить страницу",() -> {
+            if (downloadId.isEmpty()) portal.reload(); else beginDownload();
+        });
+        if (bookmark.isEnabled()) addMenu(menu,"Сохранить ссылку",this::saveBookmark);
+        if (downloadId.isEmpty()) addMenu(menu,"Импорт ссылок",() -> importVisibleLinks(false,0,navigationVersion));
+        addMenu(menu,"Выйти из СДО",this::clearSession);
+        menu.show();
+    }
+
+    private void addMenu(android.widget.PopupMenu menu,String title,Runnable action) {
+        menu.getMenu().add(title).setOnMenuItemClickListener(item -> { action.run(); return true; });
+    }
+
+    private void beginDownload() {
+        if (transferring) return;
+        discardPending();
+        retry.setVisibility(View.GONE);
+        String file = SdoPortalLinks.fileLink(startUrl);
+        if (!file.isEmpty()) {
+            portal.setVisibility(View.INVISIBLE);
+            download(file,portal.getSettings().getUserAgentString(),null);
+        } else {
+            portal.setVisibility(View.VISIBLE);
+            showStatus("Открываем файл в СДО…");
+            retry.setVisibility(View.VISIBLE);
+            portal.loadUrl(startUrl);
+        }
+    }
+
+    private void resolveResource(WebView view) {
+        int version = navigationVersion;
+        view.evaluateJavascript("""
+            (() => {
+              if (location.origin !== 'https://online-edu.mirea.ru' || location.pathname !== '/mod/resource/view.php') return '';
+              for (const item of document.querySelectorAll('.resourceworkaround a[href], #resourceobject[data], #resourceobject a[href], #resourceobject iframe[src]')) {
+                const raw = item.href || item.data || item.src;
+                if (raw && new URL(raw).pathname.includes('/mod_resource/content/')) return raw;
+              }
+              return '';
+            })()
+            """,value -> {
+                if (isFinishing() || isDestroyed() || transferring || version!=navigationVersion) return;
+                String link = "";
+                try { link=SdoPortalLinks.fileLink(String.valueOf(new org.json.JSONTokener(value).nextValue())); }
+                catch (Exception ignored) {}
+                if (link.isEmpty()) showStatus("СДО не показало ссылку на файл. Можно повторить или открыть материал через меню.");
+                else download(link,view.getSettings().getUserAgentString(),null);
+            });
     }
     private void showPortalError() {
         mainPageFailed = true;
@@ -387,7 +495,10 @@ public final class SdoPortalActivity extends Activity {
         transferring=true;
         cancelled=false;
         cancel.setVisibility(View.VISIBLE);
-        showStatus("Скачиваем документ…");
+        progress.setVisibility(View.VISIBLE);
+        retry.setVisibility(View.GONE);
+        if (!downloadId.isEmpty()) portal.setVisibility(View.INVISIBLE);
+        showStatus("Скачиваем файл из СДО…");
         DOWNLOADS.execute(()->{
             SdoPortalDownload.Document result=null;
             try {
@@ -397,12 +508,14 @@ public final class SdoPortalActivity extends Activity {
             runOnUiThread(()->{
                 transferring=false;
                 cancel.setVisibility(View.GONE);
+                progress.setVisibility(View.GONE);
+                if (!downloadId.isEmpty()) retry.setVisibility(View.VISIBLE);
                 if (isFinishing() || isDestroyed() || cancelled) {
                     if (document!=null) document.file().delete();
                     if (!isDestroyed()) showStatus("Загрузка отменена.");
                     return;
                 }
-                if (document==null) { showStatus("Не удалось получить документ. Проверь вход в СДО или попробуй через браузер."); return; }
+                if (document==null) { showStatus("Файл не скачался. Повтори загрузку или проверь вход в СДО."); return; }
                 pendingFile=document.file();
                 if (!downloadId.isEmpty()) { sendToLibrary(document); return; }
                 new AlertDialog.Builder(this).setTitle("Документ скачан")

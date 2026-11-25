@@ -58,6 +58,7 @@ public class MainActivity extends Activity {
         backupFiles.restore(savedInstanceState);
         sdoMaterials = new SdoMaterials(this, script -> {
             if (pageReady && web != null) web.evaluateJavascript(script, null);
+            else if (script.startsWith("window.orbitaSdoDownloaded")) pendingSdoPortalScript = script;
         });
         sdoMaterials.restore(savedInstanceState);
 
