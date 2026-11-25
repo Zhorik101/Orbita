@@ -39,7 +39,7 @@ final class GoogleWorkAttachment {
     private final Activity activity;
     private final ExecutorService executor;
     private final Listener listener;
-    private String workId;
+    private String workId, authorizationAccount;
     private Uri file;
     private boolean busy, trashMode;
 
@@ -58,12 +58,13 @@ final class GoogleWorkAttachment {
     }
 
     void save(Bundle out) {
-        if (workId != null && !busy) { out.putString("attachmentWork", workId); out.putBoolean("attachmentTrash",trashMode); out.putString("attachmentFile", file == null ? null : file.toString()); }
+        if (workId != null && !busy) { out.putString("attachmentWork", workId); out.putBoolean("attachmentTrash",trashMode); out.putString("attachmentFile", file == null ? null : file.toString()); out.putString("attachmentAccount", authorizationAccount); }
     }
 
     void restore(Bundle in) {
         if (in == null) return;
         workId = in.getString("attachmentWork");
+        authorizationAccount = in.getString("attachmentAccount");
         trashMode = in.getBoolean("attachmentTrash");
         String uri = in.getString("attachmentFile");
         file = uri == null ? null : Uri.parse(uri);
@@ -172,7 +173,8 @@ final class GoogleWorkAttachment {
 
     private void authorize() {
         try {
-            String account=trashMode?completedAttachment(workId).getString("account"):event(workId).account;
+            String account=trashMode?completedAttachment(workId).getString("account"):selectedCalendar(attachmentState(workId)).account();
+            authorizationAccount=account;
             java.util.List<Scope> scopes=trashMode?java.util.Collections.singletonList(new Scope(DRIVE_SCOPE)):
                 Arrays.asList(new Scope(CALENDAR_SCOPE),new Scope(DRIVE_SCOPE));
             AuthorizationRequest request=AuthorizationRequest.builder()
@@ -201,14 +203,15 @@ final class GoogleWorkAttachment {
         final String id = workId;
         final Uri picked = file;
         final boolean trash=trashMode;
+        final String account=authorizationAccount;
         busy = true;
-        if(!trash)listener.report(id, "Прикрепляем файл к событию…",false);
+        if(!trash)listener.report(id, "Проверяем, появилось ли событие в Google…",false);
         executor.execute(() -> {
             String message;
             boolean success=false;
             try {
                 if(trash){trashAttachments(id,token);message="Вложения перенесены в корзину Диска.";}
-                else {attach(id,picked,token);message="Файл прикреплён в Google Календаре.";}
+                else {attach(id,picked,token,account);message="Файл прикреплён в Google Календаре.";}
                 success=true;
             }
             catch (Failure problem) { message = problem.getMessage(); }
@@ -223,7 +226,7 @@ final class GoogleWorkAttachment {
 
     private void finish(String message,boolean trashed) {
         String id = workId;
-        workId = null; file = null; busy = false; trashMode=false;
+        workId = null; authorizationAccount = null; file = null; busy = false; trashMode=false;
         if (id != null && !activity.isDestroyed()) listener.report(id, message == null ? "Не удалось выполнить операцию с файлом." : message,trashed);
     }
 
@@ -247,9 +250,9 @@ final class GoogleWorkAttachment {
         return state;
     }
 
-    private Event event(String id) throws Exception {
-        JSONObject state=attachmentState(id);
-        JSONObject task=WidgetTasks.find(state,id);
+    private record CalendarTarget(long id, String account, String name) {}
+
+    private CalendarTarget selectedCalendar(JSONObject state) throws Exception {
         long calendarId=state.getJSONObject("calendarAutoSync").optLong("id",-1);
         String account, calendar;
         Uri calendarUri=android.content.ContentUris.withAppendedId(CalendarContract.Calendars.CONTENT_URI,calendarId);
@@ -259,21 +262,51 @@ final class GoogleWorkAttachment {
             account=cursor.getString(0);calendar=cursor.getString(2);
         }
         if (account==null || account.isEmpty()) throw new Failure("Выбранный Google-аккаунт недоступен.");
-        if (calendar==null || calendar.isEmpty()) calendar=account;
+        return new CalendarTarget(calendarId, account, calendar == null || calendar.isEmpty() ? account : calendar);
+    }
+
+    private Event findSyncedEvent(String id, String authorizedAccount) throws Exception {
+        JSONObject state=attachmentState(id);
+        JSONObject task=WidgetTasks.find(state,id);
+        CalendarTarget target=selectedCalendar(state);
+        if (!target.account().equals(authorizedAccount)) {
+            throw new Failure("Выбран другой Google-аккаунт. Повтори прикрепление для нового аккаунта.");
+        }
         String tag="orbita://schedule/tasks/"+CalendarImport.hash(id);
         try(Cursor cursor=activity.getContentResolver().query(CalendarContract.Events.CONTENT_URI,new String[]{"_sync_id"},
                 "calendar_id=? AND customAppPackage=? AND customAppUri=? AND deleted=0",
-                new String[]{Long.toString(calendarId),activity.getPackageName(),tag},null)){
+                new String[]{Long.toString(target.id()),activity.getPackageName(),tag},null)){
             if(cursor!=null && cursor.moveToFirst()){
                 String syncId=cursor.getString(0);
-                if(syncId!=null && !syncId.isEmpty())return new Event(account,calendar,syncId,task.optString("dueISO"));
+                if(syncId!=null && !syncId.isEmpty())return new Event(target.account(),target.name(),syncId,task.optString("dueISO"));
             }
         }
-        throw new Failure("Событие ещё не отправлено в Google. Дождись синхронизации календаря и повтори.");
+        return null;
     }
 
-    private void attach(String id, Uri picked, String token) throws Exception {
-        Event target=event(id);
+    private Event awaitSyncedEvent(String id, String account) throws Exception {
+        final long deadline = android.os.SystemClock.elapsedRealtime() + 10000;
+        for (long delay = 400; ; delay = Math.min(delay * 2, 2000)) {
+            if (activity.isDestroyed() || Thread.currentThread().isInterrupted()) {
+                throw new Failure("Операция прервана. Выбранный файл можно прикрепить повторно.");
+            }
+            Event event = findSyncedEvent(id, account);
+            if (event != null) return event;
+            long remaining = deadline - android.os.SystemClock.elapsedRealtime();
+            if (remaining <= 0) {
+                throw new Failure("Google ещё не получил событие. Файл не загружен. Когда событие появится в Google Календаре, нажми «Повторить».");
+            }
+            try {
+                Thread.sleep(Math.min(delay, remaining));
+            } catch (InterruptedException error) {
+                Thread.currentThread().interrupt();
+                throw new Failure("Ожидание прервано. Выбранный файл можно прикрепить повторно.");
+            }
+        }
+    }
+
+    private void attach(String id, Uri picked, String token, String account) throws Exception {
+        Event target=awaitSyncedEvent(id, account);
         JSONObject google=request("GET",target.url(),token,null,null);
         if(!target.day.equals(google.optJSONObject("start") == null ? "" : google.getJSONObject("start").optString("date")))
             throw new Failure("Дата события в Google ещё не обновилась. Попробуй после синхронизации.");
