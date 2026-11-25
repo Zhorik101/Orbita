@@ -35,8 +35,10 @@ const {chromium}=require('playwright');
   assert.equal(snapshot.retakes,1);
   assert.equal(await page.locator('[data-mini-open="mini-debts"],[data-mini-open="mini-academic-debts"]').count(),0);
   await page.evaluate(()=>window.openDiscipline('Философия',{id:'philosophy',term:1}));
+  await page.getByRole('tab',{name:'Работы'}).click();
   assert.match(await page.locator('#discipline-overview').innerText(),/Обычная задача/);
   assert.equal(await page.locator('#discipline-open-debts,#add-course-retake').count(),0);
+  await page.getByRole('tab',{name:'Обзор'}).click();
   await page.getByRole('button',{name:'История посещений'}).click();
   await page.evaluate(()=>{
    window.orbitaMireaAttendance(window.courseRequest,{error:'format'});

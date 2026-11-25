@@ -30,6 +30,7 @@ const {chromium}=require('playwright');
   await page.locator('#mini-discipline-page').getByRole('heading',{name:'Химия'}).waitFor();
   assert.equal(await page.getByRole('button',{name:'+ Мероприятие'}).count(),0);
   assert.doesNotMatch(await page.locator('#discipline-overview').innerText(),/Старое МТК/);
+  await page.getByRole('tab',{name:'Работы'}).click();
   assert.match(await page.locator('#discipline-overview').innerText(),/Готовая задача/);
   assert.deepEqual(restored,{taskId:'existing',taskCount:1});
   assert.deepEqual(errors,[]);
