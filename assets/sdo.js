@@ -79,7 +79,7 @@ window.orbitaSdoPortalImport=json=>{
  function add(url,title,kind,courseId='',section=''){
   if(!url||seen.has(url)||items.length>=500||typeof title!=='string'||!title.trim())return null;
   const item={id:sdoNewId('sdo_'),url,title,kind,courseId,section,source:'portal',updated:now,
-   discipline:kind==='course'?sdoReturnDiscipline:null};
+   discipline:null};
   seen.set(url,item);items.push(item);
   return item;
  }
@@ -171,6 +171,7 @@ function paintSdo(){
   root.innerHTML=`<section class="course-discipline sdo-toolbar"><p>${safe(sdoItemText(course))}</p>
    <p>Условия, оценки и статусы проверки открываются на официальной странице.</p>
    <div class="work-chips">${sdoExternal(course.url,'Открыть оригинал')}
+   ${window.OrbitaAndroid?.syncSdoPortal?'<button type="button" id="sdo-sync-course">Обновить из СДО</button>':''}
    <button type="button" id="sdo-edit-course">Изменить курс</button>
    <button type="button" data-sdo-add="assignment">+ Задание</button>
    <button type="button" data-sdo-add="material">+ Ссылка</button>
@@ -180,6 +181,7 @@ function paintSdo(){
     groupedSdoItems(items)||'<p>В этом разделе пока нет сохранённых записей.</p>'}`;
   $('#sdo-course-tab').onchange=event=>{sdoCourseTab=event.target.value;paintSdo();$('#sdo-course-tab').focus()};
   $('#sdo-edit-course').onclick=()=>editSdoItem(course);
+  $('#sdo-sync-course')?.addEventListener('click',()=>window.OrbitaAndroid.syncSdoPortal(course.url));
   const fileButton=$('#sdo-import');
   if(fileButton)fileButton.onclick=()=>startSdoImport({courseId:course.id,discipline:course.discipline});
   root.querySelectorAll('[data-sdo-add]').forEach(button=>button.onclick=()=>editSdoItem(null,{courseId:course.id,kind:button.dataset.sdoAdd}));
@@ -191,11 +193,13 @@ function paintSdo(){
   const size=[...sdoDeviceFiles.values()].reduce((sum,item)=>sum+Number(item.size||0),0);
   root.innerHTML=`<section class="course-discipline sdo-toolbar">
    <p>${context?safe(context.name):'Курсы и задания открываются на официальном портале МИРЭА.'}</p>
-   <p>Открой «Мои курсы» и нажми «Импорт ссылок» в окне портала, чтобы сохранить видимые курсы.</p>
-   <div class="work-chips">${sdoPortalActions()}<button type="button" id="sdo-refresh">Обновить библиотеку</button>
+   <p>«Обновить из СДО» импортирует видимые курсы после входа на портал.</p>
+   <div class="work-chips">${sdoPortalActions()}${window.OrbitaAndroid?.syncSdoPortal?'<button type="button" id="sdo-sync-portal">Обновить из СДО</button>':''}
+   <button type="button" id="sdo-refresh">Обновить локальные файлы</button>
    <button type="button" data-sdo-add="course">+ Курс</button><button type="button" data-sdo-add="assignment">+ Задание</button>
    <button type="button" data-sdo-add="material">+ Ссылка</button>
    ${window.OrbitaAndroid?.importSdoFiles?'<button type="button" id="sdo-import">Импорт файлов</button>':''}</div>
+   ${sdoCourses().some(item=>item.source==='portal'&&item.discipline)?'<button type="button" id="sdo-clean-links">Снять связи импортированных курсов</button>':''}
    <p>Офлайн-файлы: ${sdoDeviceFiles.size} · ${size?sdoSize(size):'0 КБ'}</p>
    ${sdoDeviceFiles.size?'<button type="button" id="sdo-clear">Удалить все локальные копии</button>':''}
    <div class="sdo-filters">
@@ -219,6 +223,14 @@ function paintSdo(){
   $('#sdo-sort').onchange=event=>{sdoSort=event.target.value;list()};
   const subject=$('#sdo-subject');
   if(subject)subject.onchange=()=>{sdoSubject=subject.value===''?'':subjects[Number(subject.value)];list()};
+  $('#sdo-sync-portal')?.addEventListener('click',()=>window.OrbitaAndroid.syncSdoPortal(sdoPortal+'my/courses.php'));
+  $('#sdo-clean-links')?.addEventListener('click',()=>{
+   modal('<h2>Снять привязки к дисциплинам?</h2><p>Будут сброшены связи всех курсов, импортированных со страницы СДО. Курсы, файлы и задачи сохранятся.</p><button class="primary" id="sdo-confirm-clean">Снять привязки</button>');
+   $('#sdo-confirm-clean').onclick=()=>{
+    const items=state.sdo.items.map(item=>item.kind==='course'&&item.source==='portal'?{...item,discipline:null}:item);
+    if(saveSdo({...state.sdo,items})){$('#modal').close();paintSdo()}
+   };
+  });
   $('#sdo-refresh').onclick=()=>{syncSdoFiles();paintSdo();toast('Обновлена локальная библиотека')};
   const fileButton=$('#sdo-import');
   if(fileButton)fileButton.onclick=()=>startSdoImport({discipline:context});

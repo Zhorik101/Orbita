@@ -33,10 +33,12 @@ public final class SdoPortalActivity extends Activity {
     private File pendingFile;
     private boolean transferring;
     private String startUrl;
-    private boolean mainPageFailed;
+    private boolean mainPageFailed, automaticSync;
+    private int navigationVersion;
 
     @Override public void onCreate(Bundle saved) {
         super.onCreate(saved);
+        automaticSync = getIntent().getBooleanExtra("sync",false);
         startUrl = getIntent().getStringExtra("url");
         if (!SdoPortalLinks.portal(startUrl)) startUrl = SdoPortalLinks.HOME;
         if (Build.VERSION.SDK_INT < 28) { openBrowser(startUrl); finish(); return; }
@@ -60,7 +62,7 @@ public final class SdoPortalActivity extends Activity {
         var actions = new LinearLayout(this);
         actions.addView(button("Обновить", v -> portal.reload()));
         actions.addView(button("Выйти", v -> clearSession()));
-        actions.addView(button("Импорт ссылок", v -> importVisibleLinks()));
+        actions.addView(button("Импорт ссылок", v -> importVisibleLinks(false,0,navigationVersion)));
         cancel = button("Отменить загрузку", v -> { cancelled = true; showStatus("Отменяем загрузку…"); });
         cancel.setVisibility(View.GONE);
         actions.addView(cancel);
@@ -95,12 +97,25 @@ public final class SdoPortalActivity extends Activity {
                 return true;
             }
             @Override public void onPageStarted(WebView view, String url, android.graphics.Bitmap icon) {
+                navigationVersion++;
                 bookmark.setEnabled(false);
                 mainPageFailed = false;
                 if (!SdoPortalLinks.trusted(url)) view.stopLoading();
             }
             @Override public void onPageFinished(WebView view, String url) {
                 bookmark.setEnabled(!mainPageFailed && !SdoPortalLinks.bookmark(url).isEmpty());
+                if (automaticSync && !mainPageFailed && SdoPortalLinks.portal(url)) {
+                    String path = java.net.URI.create(url).getPath();
+                    String requested = SdoPortalLinks.bookmark(startUrl);
+                    boolean validPage = requested.contains("/course/view.php?")
+                        ? requested.equals(SdoPortalLinks.bookmark(url))
+                        : "/my/".equals(path) || "/my/courses.php".equals(path);
+                    if (validPage) {
+                        int version = navigationVersion;
+                        showStatus("Обновляем каталог по открытой странице СДО…");
+                        view.postDelayed(() -> importVisibleLinks(true,0,version),900);
+                    }
+                }
             }
             @Override public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
                 if (request.isForMainFrame()) showPortalError();
@@ -153,7 +168,8 @@ public final class SdoPortalActivity extends Activity {
         setResult(RESULT_OK,new Intent().putExtra("sdoUrl",url).putExtra("sdoTitle",title));
         finish();
     }
-    private void importVisibleLinks() {
+    private void importVisibleLinks(boolean auto,int attempt,int version) {
+        if (isFinishing() || isDestroyed() || version != navigationVersion || auto && !automaticSync) return;
         String page = portal.getUrl();
         if (!SdoPortalLinks.portal(page) || mainPageFailed) return;
         String course = SdoPortalLinks.bookmark(page);
@@ -170,7 +186,8 @@ public final class SdoPortalActivity extends Activity {
               if (location.origin !== 'https://online-edu.mirea.ru' ||
                   (!inside && !['/my/','/my/courses.php'].includes(location.pathname))) return '';
               const seen = new Set(), links = [];
-              for (const anchor of document.querySelectorAll('a[href]')) {
+              const catalog = !inside && document.querySelector('[data-region="courses-view"],[data-region="myoverview"],.block_myoverview');
+              for (const anchor of (catalog || document).querySelectorAll('a[href]')) {
                 if (links.length >= 100) break;
                 if (!anchor.getClientRects().length || getComputedStyle(anchor).visibility === 'hidden') continue;
                 let url;
@@ -190,7 +207,7 @@ public final class SdoPortalActivity extends Activity {
             })()
             """;
         portal.evaluateJavascript(script, raw -> {
-            if (isFinishing() || isDestroyed() || !page.equals(portal.getUrl())) return;
+            if (isFinishing() || isDestroyed() || version != navigationVersion || !page.equals(portal.getUrl())) return;
             try {
                 var rawLinks = new org.json.JSONArray(raw);
                 var links = new org.json.JSONArray();
@@ -203,8 +220,18 @@ public final class SdoPortalActivity extends Activity {
                     if (url.isEmpty()||title.isEmpty()||inside==url.contains("/course/view.php?")||!seen.add(url)) continue;
                     links.put(new org.json.JSONObject().put("url",url).put("title",title).put("section",limited(item.optString("section"),100)));
                 }
-                if (links.length()==0) { showStatus("На открытой странице пока нет видимых ссылок. Если требуется вход, войди и повтори."); return; }
+                if (links.length()==0) {
+                    if (auto && attempt<10) portal.postDelayed(() -> importVisibleLinks(true,attempt+1,version),900);
+                    else showStatus("На странице пока нет видимых ссылок. Проверь вход и фильтры СДО.");
+                    return;
+                }
                 var payload = new org.json.JSONObject().put("course",inside?course:"").put("title",limited(portal.getTitle(),180)).put("links",links);
+                if (auto) {
+                    automaticSync=false;
+                    setResult(RESULT_OK,new Intent().putExtra("sdoImport",payload.toString()));
+                    finish();
+                    return;
+                }
                 new AlertDialog.Builder(this).setTitle("Импортировать ссылки в Орбиту?")
                     .setMessage("Найдено видимых ссылок: " + links.length() + ".")
                     .setNegativeButton("Отмена",null).setPositiveButton("Импортировать",(dialog,which)->{

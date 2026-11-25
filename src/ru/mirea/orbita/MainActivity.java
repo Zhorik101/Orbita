@@ -196,13 +196,15 @@ public class MainActivity extends Activity {
             runOnUiThread(new Runnable(){@Override public void run(){try{startActivity(Intent.createChooser(new Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT,"Приглашение в команду Орбиты: "+link),"Пригласить в команду"));}catch(Exception ignored){}}});
         }
 
-        @JavascriptInterface public void openSdoPortal(String url) {
+        @JavascriptInterface public void openSdoPortal(String url) { launchSdoPortal(url,false); }
+        @JavascriptInterface public void syncSdoPortal(String url) { launchSdoPortal(url,true); }
+        private void launchSdoPortal(String url,boolean sync) {
             if (!SdoPortalLinks.portal(url)) return;
             String page = SdoPortalLinks.bookmark(url);
             if (page.isEmpty()) page = "https://online-edu.mirea.ru/my/courses.php".equals(url) ? url : SdoPortalLinks.HOME;
             String target = page;
             runOnUiThread(() -> startActivityForResult(new Intent(MainActivity.this,SdoPortalActivity.class)
-                .putExtra("url",target),SdoPortalActivity.REQUEST));
+                .putExtra("url",target).putExtra("sync",sync),SdoPortalActivity.REQUEST));
         }
         @JavascriptInterface public String sdoFiles() { return sdoMaterials.list(); }
         @JavascriptInterface public void importSdoFiles() { runOnUiThread(sdoMaterials::choose); }

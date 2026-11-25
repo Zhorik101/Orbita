@@ -17,6 +17,7 @@ const {chromium}=require('playwright');
     read:()=>localStorage.getItem('fixture-profile')||'',
     write:json=>{localStorage.setItem('fixture-profile',json);return true},
     sdoFiles:()=>JSON.stringify(window.deviceFiles),
+    syncSdoPortal:url=>{window.sdoSyncUrl=url},
     importSdoFiles:()=>window.nativeCalls.push('pick'),
     cancelSdoImport:()=>window.nativeCalls.push('cancel'),
     openSdoFile:id=>window.nativeCalls.push('open:'+id),
@@ -39,8 +40,10 @@ const {chromium}=require('playwright');
    showPage('miniapps');
   });
   await page.locator('[data-tool="sdo"]').click();
-  assert.match(await page.locator('#sdo-content').innerText(),/Импорт ссылок/);
+  assert.match(await page.locator('#sdo-content').innerText(),/Обновить из СДО/);
   assert.equal(await page.getByRole('link',{name:'Мои курсы в СДО ↗'}).getAttribute('href'),'https://online-edu.mirea.ru/my/courses.php');
+  await page.locator('#sdo-sync-portal').click();
+  assert.equal(await page.evaluate(()=>window.sdoSyncUrl),'https://online-edu.mirea.ru/my/courses.php');
   await page.getByRole('button',{name:'+ Курс',exact:true}).click();
   await page.locator('#sdo-edit-title').fill('Лабораторный практикум по химии');
   await page.locator('#sdo-edit-url').fill('https://online-edu.mirea.ru/course/view.php?id=81&sesskey=secret');
@@ -108,6 +111,7 @@ const {chromium}=require('playwright');
   await page.locator('#sdo-mode').selectOption('materials');
   assert.match(await page.locator('#sdo-content').innerText(),/Копия отсутствует/);
   await page.evaluate(()=>{
+   sdoReturnDiscipline={id:'chem',term:3,name:'Химия'};
    const course='https://online-edu.mirea.ru/course/view.php?id=99';
    window.orbitaSdoPortalImport(JSON.stringify({links:[
     {url:course+'&sesskey=secret',title:'Курс со страницы'},
@@ -122,6 +126,7 @@ const {chromium}=require('playwright');
   assert.match(await page.locator('#sdo-content').innerText(),/Со страницы СДО/);
   const imported=await page.evaluate(()=>state.sdo.items.filter(item=>item.source==='portal'));
   assert.equal(imported.length,2);
+  assert.equal(imported.find(item=>item.kind==='course').discipline,null);
   assert(!JSON.stringify(imported).includes('secret'));
   assert.deepEqual(errors,[]);
   console.log('PASS saved SDO links, manual course structure, task linking, import cancellation, offline bridge, profile and mobile UI');
