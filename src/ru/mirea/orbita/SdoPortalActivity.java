@@ -40,7 +40,9 @@ public final class SdoPortalActivity extends Activity {
     private final java.util.HashSet<String> queued = new java.util.HashSet<>();
     private final org.json.JSONArray syncResults = new org.json.JSONArray();
     private SyncPage syncPage;
-    private int visited, skipped, resultSize;
+    private int visited, skipped, resultSize, foundCourses, foundMaterials;
+    private String previousSnapshot;
+    private int snapshotVersion = -1;
     private boolean batch;
     private int surface, foreground, control;
     private android.widget.ProgressBar progress;
@@ -172,7 +174,9 @@ public final class SdoPortalActivity extends Activity {
                     if (validPage) {
                         int version = navigationVersion;
                         showStatus(syncPage == null ? "Обновляем каталог по открытой странице СДО…"
-                            : "СДО: проверено страниц " + visited + ", в очереди " + (syncQueue.size()+1));
+                            : "Курсов: " + foundCourses + " · проверено страниц: " + visited
+                            + " · материалов: " + foundMaterials + " · осталось: " + (syncQueue.size()+1)
+                            + " · без результата: " + skipped);
                         view.postDelayed(() -> importVisibleLinks(true,0,version),900);
                     }
                 }
@@ -363,8 +367,19 @@ public final class SdoPortalActivity extends Activity {
                     if (url.isEmpty()||title.isEmpty()||(file.isEmpty()&&(attachments||inside==url.contains("/course/view.php?")))||!seen.add(url)) continue;
                     links.put(new org.json.JSONObject().put("url",url).put("title",title).put("section",limited(item.optString("section"),100)));
                 }
+                if (auto && attachments) {
+                    String snapshot=links.toString();
+                    boolean stable=version==snapshotVersion && snapshot.equals(previousSnapshot);
+                    snapshotVersion=version;
+                    previousSnapshot=snapshot;
+                    if (attempt<7 && (links.length()==0 || !stable)) {
+                        portal.postDelayed(() -> importVisibleLinks(true,attempt+1,version),750);
+                        return;
+                    }
+                    if (batch && links.length()==0) skipped++;
+                }
                 if (links.length()==0 && !(auto && syncPage != null)) {
-                    if (auto && attempt<10) portal.postDelayed(() -> importVisibleLinks(true,attempt+1,version),900);
+                    if (auto && !attachments && attempt<10) portal.postDelayed(() -> importVisibleLinks(true,attempt+1,version),900);
                     else showStatus("На странице пока нет видимых ссылок. Проверь вход и фильтры СДО.");
                     return;
                 }
@@ -413,6 +428,9 @@ public final class SdoPortalActivity extends Activity {
     private void appendSyncResult(org.json.JSONObject payload) {
         int size = payload.toString().length();
         if (resultSize + size > MAX_SYNC_RESULT) { skipped++; return; }
+        int count=payload.optJSONArray("links").length();
+        if (payload.optString("course").isEmpty()) foundCourses+=count;
+        else foundMaterials+=count;
         syncResults.put(payload);
         resultSize += size;
     }
