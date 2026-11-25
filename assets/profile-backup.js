@@ -98,28 +98,26 @@ async function parseProfileBackup(json){
 }
 
 function mergeProfileBackup(current, data, settings){
- const addUnique=(items,incoming,keys)=>{
+ const addUnique=(items,incoming,idKey,signature)=>{
   const result=items.map(item=>({...item}));
-  const seen=new Set(result.flatMap(keys));
+  const ids=new Set(result.map(item=>item[idKey]).filter(Boolean));
+  const allTexts=new Set(result.map(signature));
+  const legacyTexts=new Set(result.filter(item=>!item[idKey]).map(signature));
   for(const item of incoming){
-   const identities=keys(item);
-   if(identities.some(key=>seen.has(key)))continue;
+   const id=item[idKey],text=signature(item);
+   if(id?(ids.has(id)||legacyTexts.has(text)):allTexts.has(text))continue;
    result.push({...item});
-   for(const key of identities)seen.add(key);
+   if(id)ids.add(id);else legacyTexts.add(text);
+   allTexts.add(text);
   }
   return result;
  };
- const taskKeys=task=>[
-  ...(task.workId?['id:'+task.workId]:[]),
-  'text:'+JSON.stringify(['text','subject','dueISO','due','comment'].map(key=>task[key]||''))
- ];
- const noteKeys=note=>[
-  ...(note.id?['id:'+note.id]:[]),'text:'+JSON.stringify([note.title||'',note.body||''])
- ];
+ const taskText=task=>JSON.stringify(['text','subject','dueISO','due','comment'].map(key=>task[key]||''));
+ const noteText=note=>JSON.stringify([note.title||'',note.body||'']);
  const {tasks,notebooks,notes,homeNote,...preferences}=data;
  return {...current,...(settings?preferences:{}),
-  tasks:addUnique(current.tasks,tasks,taskKeys),
-  notebooks:addUnique(current.notebooks,notebooks,noteKeys),
+  tasks:addUnique(current.tasks,tasks,'workId',taskText),
+  notebooks:addUnique(current.notebooks,notebooks,'id',noteText),
   notes:{...notes,...current.notes},
   homeNote:current.homeNote||homeNote||''
  };

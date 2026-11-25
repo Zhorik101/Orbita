@@ -27,6 +27,8 @@ vm.runInContext(source,context);
  const merged=context.mergeProfileBackup(current,legacy,true);
  assert.equal(merged.tasks.length,1);
  assert.equal(merged.tasks[0].done,false);
+ const second={...decoded,tasks:[{...decoded.tasks[0],workId:'another'}]};
+ assert.equal(context.mergeProfileBackup(current,second,false).tasks.length,2);
  assert.equal(merged.notebooks[0].body,'Лекция');
  assert.equal(merged.notes.lesson,'Свежая заметка');
  assert.equal(merged.theme,'pink');
