@@ -38,7 +38,8 @@ const {chromium}=require('playwright');
     loadMireaAttendance:(request,id)=>window.attendanceRequestsSeen.push({request,id})
    };
    courseGradeResult={updated:Date.now(),schema:2,courses:[
-    {id:'chem',name:'Информационные технологии в химии',term:3,total:24,maximum:100,categories:[]}
+    {id:'chem',name:'Информационные технологии в химии',term:3,total:24,maximum:100,categories:[]},
+    {id:'chem',name:'Информационные технологии в химии',term:2,total:20,maximum:100,categories:[]}
    ]};
    showPage('mini-courses');
   });
@@ -51,8 +52,22 @@ const {chromium}=require('playwright');
   assert.match(await detail.innerText(),/Загружаем посещаемость/);
   const reply=await page.evaluate(()=>window.attendanceRequestsSeen);
   assert.equal(reply.length,1);
-  await page.evaluate(request=>window.orbitaMireaAttendance(request,{present:2,absent:1,total:3,entries:[]}),reply[0].request);
+  await page.evaluate(request=>window.orbitaMireaAttendance(request,{present:2,absent:1,total:3,entries:[{start:1764057600,type:3},{start:1764144000,type:3},{start:1764230400,type:1}]}),reply[0].request);
   assert.match(await detail.innerText(),/Присутствий: 2/);
+  await detail.getByRole('button',{name:'История посещений'}).click();
+  assert.match(await page.locator('#course-attendance-content').innerText(),/нескольким семестрам/);
+  await page.getByRole('button',{name:'Обновить',exact:true}).click();
+  await page.evaluate(()=>window.orbitaMireaAttendance(window.attendanceRequestsSeen.at(-1).request,{error:'network'}));
+  assert.match(await page.locator('#course-attendance-content').innerText(),/Не удалось загрузить/);
+  await page.locator('#retry-course-attendance').click();
+  await page.evaluate(()=>window.orbitaMireaAttendance(window.attendanceRequestsSeen.at(-1).request,
+   {present:1,absent:0,total:1,partial:true,entries:[{start:1764057600,type:3}]}));
+  assert.match(await page.locator('#course-attendance-content').innerText(),/часть журналов/);
+  await page.evaluate(()=>document.querySelector('#modal').close());
+  await page.evaluate(()=>window.openDiscipline('Информационные технологии в химии',{id:'chem',term:2}));
+  assert.match(await detail.innerText(),/Без разбивки по семестрам/);
+  assert.equal(await page.evaluate(()=>window.attendanceRequestsSeen.length),3);
+  await page.evaluate(()=>window.openDiscipline('Информационные технологии в химии',{id:'chem',term:3}));
   assert.match(await detail.innerText(),/А-308/);
   assert.match(await detail.innerText(),/Старый отчёт/);
   assert.doesNotMatch(await detail.innerText(),/Другой предмет/);

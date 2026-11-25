@@ -50,8 +50,8 @@ function paintDiscipline(){
  const latestTerm=Math.max(0,...courses.map(course=>course.term||0));
  const score=courses.find(course=>course.term===(term??latestTerm)
   &&(id?course.id===id:subjectKey(course.name)===subjectKey(name)));
- requestCourseAttendance(score?.id,score?.term);
- const attendance=score?.id?attendanceByCourse.get(attendanceCourseKey(score.id,score.term)):null;
+ requestCourseAttendance(score?.id);
+ const attendance=score?.id?attendanceByCourse.get(score.id):null;
  const activeTerm=!term||!latestTerm||term===latestTerm;
  const group=state.officialGroup;
  const scheduleCache=officialCache[calendarKey(group)];
@@ -71,7 +71,7 @@ function paintDiscipline(){
  const attendanceStatus=attendance?.error==='login'?'Войди в МИРЭА для просмотра отметок'
   :attendance?.error==='format'?'Не удалось разобрать журнал МИРЭА'
   :attendance?.error?'Не удалось загрузить посещаемость'
-  :attendance?attendance.total?`Присутствий: ${attendance.present} · Пропусков: ${attendance.absent} · Всего: ${attendance.total}${attendance.partial?' · часть журналов':''}`:'Отметок пока нет'
+  :attendance?attendance.total?`Присутствий: ${attendance.present} · Пропусков: ${attendance.absent} · Всего: ${attendance.total}${attendance.partial?' · часть журналов':''} · Без разбивки по семестрам`:'Отметок пока нет'
   :score?.id&&window.OrbitaAndroid?.loadMireaAttendance?'Загружаем посещаемость…':'Посещаемость недоступна';
  const scheduleStatus=!activeTerm?'Для прошедшего семестра предстоящие пары не показываются.'
   :!group?'Сначала выбери свою группу.':disciplineScheduleRequest||(!scheduleCache?'Расписание ещё не загружено.':'Пар по этому предмету на ближайшие 14 дней нет.');
@@ -81,7 +81,7 @@ function paintDiscipline(){
   disciplinePanel('Баллы БРС',`<p role="status">${safe(gradesStatus)}</p>
    ${score?courseScoreHtml(score):`<p>${courseGradesLoading?'Загружаем баллы…':result?.error==='login'?'Войди в МИРЭА для просмотра баллов.':result?.error?'Не удалось загрузить баллы.':'Баллы по этому предмету недоступны.'}</p>`}
    ${window.OrbitaAndroid?.loadMireaGrades&&!courseGradesLoading?`<button type="button" data-discipline-action="grades">${result?.error==='login'?'Войти':'Обновить БРС'}</button>`:''}`)
-  +disciplinePanel('Посещаемость',`<p role="status">${safe(attendanceStatus)}</p><p>${safe(window.disciplineUpdated(attendance?.updated))}</p>
+  +disciplinePanel('Посещаемость по дисциплине',`<p role="status">${safe(attendanceStatus)}</p><p>${safe(window.disciplineUpdated(attendance?.updated))}</p>
    ${score?.id&&window.OrbitaAndroid?.loadMireaAttendance?`<button type="button" data-discipline-action="attendance">${attendance?.error?'Повторить':'История посещений'}</button>`:''}`)
   +disciplinePanel('Предстоящие пары',`${slotRows?`<ul>${slotRows}</ul>`:''}
    <p role="status">${safe(upcoming.length?disciplineScheduleRequest||'':scheduleStatus)}</p>
@@ -101,7 +101,7 @@ function paintDiscipline(){
  if(scoreHistory)scoreHistory.remove();
  const actions={
   grades:()=>result?.error==='login'?openPulseGrades(true):loadCourseGrades(),
-  attendance:()=>showCourseAttendance(score.id,name,score.term),
+  attendance:()=>showCourseAttendance(score.id,name),
   schedule:async()=>{
    const selection=openedDiscipline;
    disciplineScheduleRequest='Обновляем расписание…';

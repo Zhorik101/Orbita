@@ -22,6 +22,13 @@ public class MireaAttendanceTest {
         check(MireaAcademicApi.collectAttendance(List.of("empty"), id -> EMPTY).total() == 0);
         var partial = MireaAcademicApi.collectAttendance(List.of("ok", "broken"), id -> id.equals("ok") ? present : number(8, 4));
         check(partial.partial() && partial.total() == 1);
+        var mixed = MireaAcademicApi.collectAttendance(List.of("mixed"), id -> concat(message(1, number(8, 4)), present));
+        check(mixed.partial() && mixed.present() == 1);
+        var networkPartial = MireaAcademicApi.collectAttendance(List.of("ok", "offline"), id -> {
+            if (id.equals("offline")) throw new IOException();
+            return present;
+        });
+        check(networkPartial.partial() && networkPartial.present() == 1);
         expectFailure("format", () -> MireaAcademicApi.collectAttendance(List.of("a", "b"), id -> id.equals("a") ? EMPTY : number(8, 4)));
         expectFailure("network", () -> MireaAcademicApi.collectAttendance(List.of("a"), id -> { throw new IOException(); }));
         check(MireaAcademicApi.collectAttendance(List.of("a"), id -> wrapped).absent() == 1);

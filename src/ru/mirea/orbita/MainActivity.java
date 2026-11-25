@@ -358,10 +358,11 @@ public class MainActivity extends Activity {
                 JSONObject result = new JSONObject();
                 String session = currentMireaSessionKey();
                 int journals = 0, parsed = 0;
-                String code = "ok";
+                String code = "ok", stage = "session";
                 try {
                     String cookie = android.webkit.CookieManager.getInstance().getCookie(MireaAcademicApi.ORIGIN + "/");
                     if (session.isEmpty() || !session.equals(mireaSessionKey(cookie))) throw new MireaAcademicApi.SignInRequired();
+                    stage = "journal-entries";
                     var attendance = new MireaAcademicApi(cookie).attendance(discipline);
                     journals = attendance.journals();
                     parsed = attendance.total();
@@ -376,12 +377,13 @@ public class MainActivity extends Activity {
                 } catch (Exception error) {
                     if (error instanceof MireaAcademicApi.AttendanceFailure failure) {
                         code = failure.code;
+                        stage = failure.stage;
                         journals = failure.journals;
                     } else code = error instanceof MireaAcademicApi.SignInRequired ? "login" : "network";
                     try { result.put("error", code); } catch (org.json.JSONException ignored) {}
                 }
                 android.util.Log.i("OrbitaAttendance", "request=" + requestId + " journals=" + journals
-                    + " parsed=" + parsed + " code=" + code);
+                    + " parsed=" + parsed + " stage=" + stage + " code=" + code);
                 String callback = "window.orbitaMireaAttendance?.(" + requestId + "," + result + ")";
                 runOnUiThread(() -> {
                     if (web == null || isFinishing() || isDestroyed()) return;

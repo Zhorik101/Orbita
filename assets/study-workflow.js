@@ -267,15 +267,12 @@ const attendanceByCourse=new Map(),attendanceRequests=new Map();
 let attendanceRequestId=0,attendanceDialog=null;
 const attendanceTypes={1:['Отсутствовал','absent'],2:['Уважительная причина','excused'],3:['Присутствовал','present']};
 const lessonDateFormat=new Intl.DateTimeFormat('ru',{timeZone:'Europe/Moscow',day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
-function attendanceCourseKey(id,term){return (term||0)+':'+id}
-function requestCourseAttendance(id,term){
- const key=attendanceCourseKey(id,term);
- if(!id||!window.OrbitaAndroid?.loadMireaAttendance||attendanceByCourse.has(key))return;
- const terms=new Set((courseGradeResult?.courses||[]).filter(course=>course.id===id).map(course=>course.term).filter(Boolean));
- if(terms.size>1){attendanceByCourse.set(key,{error:'term'});return}
- attendanceByCourse.set(key,null);
+// The Pulse history RPC is scoped to a discipline and journal, without a semester argument.
+function requestCourseAttendance(id){
+ if(!id||!window.OrbitaAndroid?.loadMireaAttendance||attendanceByCourse.has(id))return;
+ attendanceByCourse.set(id,null);
  const request=++attendanceRequestId;
- attendanceRequests.set(request,key);
+ attendanceRequests.set(request,id);
  requestMireaReply('course:'+request,()=>window.OrbitaAndroid.loadMireaAttendance(request,id),
   result=>window.orbitaMireaAttendance(request,result));
 }
@@ -283,43 +280,46 @@ window.orbitaMireaAttendance=(request,result)=>{
  const id=attendanceRequests.get(request);
  if(!id||!takeMireaReply('course:'+request))return;
  attendanceRequests.delete(request);
- attendanceByCourse.set(id,result.error?result:{...result,updated:Date.now()});
+ const valid=result&&!result.error&&Array.isArray(result.entries)&&Number.isInteger(result.total)
+  &&result.total===result.entries.length;
+ attendanceByCourse.set(id,valid?{...result,updated:Date.now()}:{error:result?.error||'format'});
  if(page==='mini-discipline')window.paintDiscipline?.();
  if(page==='mini-courses'&&[...$$('[data-sport-attendance]')].some(node=>node.dataset.sportAttendance===id))paintCourseTools();
- if(attendanceDialog?.key===id&&$('#course-attendance-content')&&$('#modal').open)paintAttendanceDialog();
+ if(attendanceDialog?.id===id&&$('#course-attendance-content')&&$('#modal').open)paintAttendanceDialog();
  if(page==='pairs')renderPairs();
 };
 function paintAttendanceDialog(){
- const box=$('#course-attendance-content'),{id,term,key}=attendanceDialog,info=attendanceByCourse.get(key);
+ const box=$('#course-attendance-content'),{id}=attendanceDialog,info=attendanceByCourse.get(id);
  if(!info){box.textContent='Загружаем посещения…';return}
+ const scope='<p>Все доступные отметки по дисциплине. Они могут относиться к нескольким семестрам.</p>';
+ const refresh='<button type="button" id="retry-course-attendance">'+(info.error==='login'?'Войти':info.error||info.partial?'Повторить':'Обновить')+'</button>';
  if(info.error){
-  box.innerHTML='<p>'+ (info.error==='login'?'Войди в МИРЭА, чтобы посмотреть посещения.':info.error==='timeout'?'МИРЭА не ответила вовремя.':info.error==='format'?'Не удалось разобрать журнал МИРЭА.':info.error==='term'?'МИРЭА вернула один идентификатор для нескольких семестров. Отметки по семестру не удалось разделить.':'Не удалось загрузить посещения.')+'</p><button type="button" class="primary" id="retry-course-attendance">'+(info.error==='login'?'Войти':'Повторить')+'</button>';
-  $('#retry-course-attendance').onclick=()=>{
-   if(info.error==='login'){openPulseGrades(true);$('#modal').close();return}
-   attendanceByCourse.delete(key);requestCourseAttendance(id,term);paintAttendanceDialog();
-  };
-  return;
+  const message={login:'Войди в МИРЭА, чтобы посмотреть посещения.',timeout:'МИРЭА не ответила вовремя.',
+   format:'Не удалось разобрать журнал МИРЭА.',journals:'МИРЭА не вернула доступные журналы.'};
+  box.innerHTML='<p>'+(message[info.error]||'Не удалось загрузить посещения.')+'</p>'+refresh;
+ }else if(!info.total){
+  box.innerHTML=scope+'<p>МИРЭА не вернула отметок по предмету в доступных журналах.</p>'+refresh;
+ }else{
+  box.innerHTML=`${scope}${info.partial?'<p>Загружена часть журналов.</p>':''}${refresh}<div class="attendance-totals">
+   <div><strong>${info.present}</strong><small>Присутствовал</small></div>
+   <div><strong>${info.absent}</strong><small>Отсутствовал</small></div>
+   <div><strong>${info.total}</strong><small>Всего</small></div>
+   </div>${info.excused?`<p>По уважительной причине: ${info.excused}</p>`:''}
+   <div class="attendance-rows">${info.entries.map(entry=>{
+    const [name,kind]=attendanceTypes[entry.type]||['Нет отметки','unknown'];
+    return `<div class="attendance-row ${kind}"><time>${lessonDateFormat.format(entry.start*1000)}</time><b>${name}</b></div>`;
+   }).join('')}</div>`;
  }
- if(!info.total){box.innerHTML='<p>МИРЭА не вернула отметок по предмету в доступных журналах.</p>';return}
- box.innerHTML=`${info.partial?'<p>Загружена часть журналов.</p><button type="button" id="retry-partial-attendance">Повторить</button>':''}<div class="attendance-totals">
-  <div><strong>${info.present}</strong><small>Присутствовал</small></div>
-  <div><strong>${info.absent}</strong><small>Отсутствовал</small></div>
-  <div><strong>${info.total}</strong><small>Всего</small></div>
- </div>${info.excused?`<p>По уважительной причине: ${info.excused}</p>`:''}
- <div class="attendance-rows">${info.entries.map(entry=>{
-  const [name,kind]=attendanceTypes[entry.type]||['Нет отметки','unknown'];
-  return `<div class="attendance-row ${kind}"><time>${lessonDateFormat.format(entry.start*1000)}</time><b>${name}</b></div>`;
- }).join('')}</div>`;
- const retry=$('#retry-partial-attendance');
- if(retry)retry.onclick=()=>{attendanceByCourse.delete(key);requestCourseAttendance(id,term);paintAttendanceDialog()};
-
+ $('#retry-course-attendance').onclick=()=>{
+  if(info.error==='login'){openPulseGrades(true);$('#modal').close();return}
+  attendanceByCourse.delete(id);requestCourseAttendance(id);paintAttendanceDialog();
+ };
 }
-function showCourseAttendance(id,name,term){
- const key=attendanceCourseKey(id,term);
- attendanceDialog={id,term,key};
- if(attendanceByCourse.get(key)?.error)attendanceByCourse.delete(key);
- modal(`<h2>Посещения</h2><p>${safe(name)}</p><div id="course-attendance-content"></div>`);
- requestCourseAttendance(id,term);
+function showCourseAttendance(id,name){
+ attendanceDialog={id};
+ if(attendanceByCourse.get(id)?.error && attendanceByCourse.get(id).error!=='login')attendanceByCourse.delete(id);
+ modal(`<h2>Посещения по дисциплине</h2><p>${safe(name)}</p><div id="course-attendance-content"></div>`);
+ requestCourseAttendance(id);
  paintAttendanceDialog();
 }
 function ownPairsSelected(){
@@ -372,9 +372,9 @@ function lessonAttendance(lesson,date,request=false){
  if(!matches.length){
   if(dailyAttendance.has(dayKey)&&!direct)return null;
   const courses=(courseGradeResult?.courses||[]).filter(course=>course.id&&sameSubject(course.name));
-  const keys=[...new Set(courses.map(course=>attendanceCourseKey(course.id,course.term)))];
+  const keys=[...new Set(courses.map(course=>course.id))];
   if(keys.length!==1)return null;
-  if(request)requestCourseAttendance(courses[0].id,courses[0].term);
+  if(request)requestCourseAttendance(keys[0]);
   matches=attendanceByCourse.get(keys[0])?.entries?.filter(sameTime)||[];
  }
  const statuses=[...new Set(matches.map(mark=>mark.type).filter(type=>attendanceTypes[type]))];
@@ -423,11 +423,11 @@ function isPhysicalEducation(name){
 }
 function sportAttendanceHtml(score){
  if(!score.id||!window.OrbitaAndroid?.loadMireaAttendance)return '';
- const attendance=attendanceByCourse.get(attendanceCourseKey(score.id,score.term));
+ const attendance=attendanceByCourse.get(score.id);
  const summary=score.lessons>0?`Присутствовал: ${score.present} из ${score.lessons}`:'';
  const text=summary||(!attendance?'Загружаем посещения…':attendance.error?'Посещения недоступны':attendance.total
-  ?`Присутствовал: ${attendance.present} из ${attendance.total} · Пропусков: ${attendance.absent}`:'Отметок пока нет');
- return `<p class="course-sport-attendance" data-sport-attendance="${safe(attendanceCourseKey(score.id,score.term))}">${text}</p>`;
+  ?`Присутствовал: ${attendance.present} из ${attendance.total} · Пропусков: ${attendance.absent} · Все доступные журналы`:'Отметок пока нет');
+ return `<p class="course-sport-attendance" data-sport-attendance="${safe(score.id)}">${text}</p>`;
 }
 function courseScoreHtml(score){
  if(!score)return '';
@@ -481,7 +481,7 @@ function paintCourseTools(){
  const visibleScores=(result?.courses||[]).filter(score=>selectedGradeTerm===null||score.term===selectedGradeTerm);
  const subjects=new Map(visibleScores.map(score=>[subjectKey(score.name),{name:score.name,score}]));
  if(page==='mini-courses'){
-  for(const {score} of subjects.values())if(isPhysicalEducation(score.name)&&!(score.lessons>0))requestCourseAttendance(score.id,score.term);
+  for(const {score} of subjects.values())if(isPhysicalEducation(score.name)&&!(score.lessons>0))requestCourseAttendance(score.id);
  }
  const totals=visibleScores.map(score=>score.total).filter(Number.isFinite);
  $('#course-grade-summary').innerHTML=totals.length?`<div class="course-summary"><div><strong>${gradeNumber(totals.reduce((a,b)=>a+b,0)/totals.length)}</strong><span>Средний балл</span></div><div><strong>${visibleScores.length}</strong><span>Дисциплин в БРС</span></div></div>`:'';
@@ -501,7 +501,7 @@ function paintCourseTools(){
   button.onclick=()=>addTask(name);
   const card=button.closest('.course-discipline');
   const history=card.querySelector('.course-attendance-link');
-  if(history)history.onclick=()=>showCourseAttendance(score.id,name,score.term);
+  if(history)history.onclick=()=>showCourseAttendance(score.id,name);
  });
  const rows=officialLessons(state.officialGroup,new Date()),gaps=lessonBreaks(rows);if($('#mini-windows-body'))$('#mini-windows-body').innerHTML=gaps.map(g=>'<article class="work-window"><b>'+breakTime(g.start)+'–'+breakTime(g.end)+'</b><p>'+g.duration+' минут между занятиями</p></article>').join('')||'<p>На сегодня загруженных перерывов нет.</p>'}
 function workCardHtml(id,expanded){const pending=pendingWorks(),subjects=courseSubjects(),rows=officialLessons(state.officialGroup,new Date());let body='';if(id==='attendanceQr')return `<button type="button" class="home-qr-action" data-open-attendance-qr><span class="home-qr-symbol">${attendanceScannerIcon}</span><span class="home-qr-copy"><b>QR посещения</b><small>Отметиться на паре</small></span><span class="home-qr-arrow">${courseChevron()}</span></button>`;if(id==='progress')body='<strong class="work-value">'+(state.tasks.length-pending.length)+' / '+state.tasks.length+'</strong><p>работ выполнено</p>'+ (expanded?'<p>Осталось: '+pending.length+'</p>':'')+'<button data-work-open="tasks">Все работы →</button>';if(id==='deadlines')body=pending.filter(t=>t.dueISO).slice(0,expanded?5:2).map(t=>'<p><b>'+safe(t.text)+'</b><br>'+safe(shortSubject(t.subject))+' · '+safe(t.due)+'</p>').join('')+'<button data-quick-work>+ Работа</button>';if(id==='rooms')body=rows.slice(0,expanded?8:2).map(l=>'<p><b>'+safe(l.start)+' · '+safe(l.room)+'</b><br>'+safe(l.campus)+'</p>').join('')+'<button data-work-open="campus">Карта корпуса →</button>';if(id==='subjects')body=subjects.slice(0,expanded?8:3).map((s,i)=>'<button data-card-subject="'+i+'">'+safe(shortSubject(s))+' ＋</button>').join('');if(id==='week'){let count=0;const list=[];for(let i=0;i<7;i++){const d=new Date();d.setDate(d.getDate()+i);const n=officialLessons(state.officialGroup,d).length;count+=n;list.push('<p>'+safe(d.toLocaleDateString('ru',{weekday:'short',day:'numeric'}))+' · '+n+' пар</p>')}body='<strong class="work-value">'+(officialCache[calendarKey(state.officialGroup)]?count:'—')+'</strong><p>пар за 7 дней</p>'+(expanded?list.join(''):'')+'<button data-work-open="pairs">Расписание →</button>'}if(id==='today')body='<strong class="work-value">'+new Date().getDate()+'</strong><p>'+safe(new Date().toLocaleDateString('ru',{weekday:'long',month:'long'}))+'</p><b>'+safe(state.group)+'</b>';if(id==='shortcuts')body='<div class="work-chips"><button data-work-open="campus">Карты</button><button data-work-open="tasks">Работы</button><button data-work-open="mini-courses">Предметы</button><button data-work-open="mini-notes">Заметки</button></div>';return '<div class="section-title"><h2>'+homeCatalog[id].name+'</h2></div>'+body}
