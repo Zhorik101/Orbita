@@ -81,3 +81,42 @@ body[data-glass]:not([data-glass="off"]) :is(
   .reference-ui #mini-grid .mini-order-controls { inset-inline: 8px; gap: 3px; }
   .reference-ui #mini-grid .mini-order-controls > span { min-width: 30px; }
 }
+
+/* Keep the dashboard controls and user-assigned grid spans. */
+.reference-ui:has(#schedule-page:not([hidden])) main > .heading {
+  margin-block: 0 14px; padding-block: 0; align-items: center; gap: 10px;
+}
+.reference-ui:has(#schedule-page:not([hidden])) main > .heading .eyebrow,
+.reference-ui:has(#schedule-page:not([hidden])) #page-subtitle { display: none; }
+.reference-ui:has(#schedule-page:not([hidden])) #page-title {
+  font-size: clamp(27px,8vw,36px); line-height: 1.15; margin: 0;
+}
+.reference-ui #schedule-page .home-toolbar:not(.home-editing .home-toolbar) { margin: 0 0 9px; gap: 6px; padding: 0; }
+.reference-ui #schedule-page :is(.home-edit-button,.home-grades-shortcut) {
+  min-height: 44px; padding-inline: 8px; border: 1px solid var(--line);
+  border-radius: 12px; background: var(--panel); color: var(--accent); font-size: 12px;
+}
+.home-quick-actions button:active { background: var(--accent-soft) !important; }
+.reference-ui #schedule-page .home-grid { gap: 10px; align-items: start; }
+.reference-ui #schedule-page .home-card[data-card="next"] .next-card {
+  min-height: 0 !important; padding: 17px !important; border-inline-start: 3px solid var(--accent) !important;
+}
+.reference-ui #schedule-page .next-card h2 {
+  font-size: clamp(17px,5vw,23px) !important; margin: 9px 0 5px !important; line-height: 1.18;
+}
+.reference-ui #schedule-page .next-place { margin-top: 8px; line-height: 1.4; }
+.reference-ui #schedule-page .home-card[data-card="next"] .subject-art { width: 70px; height: 70px; inset-inline-end: 11px; }
+.reference-ui #schedule-page .home-card[data-card="attendanceQr"] .extra-card {
+  padding: 0 !important; border: 0; background: transparent; box-shadow: none;
+}
+.reference-ui #schedule-page .home-qr-action { min-height: 60px; padding: 8px 10px; }
+.reference-ui #schedule-page .home-qr-symbol { flex: 0 0 34px; width: 34px; height: 34px; border-radius: 10px; }
+.reference-ui #schedule-page .home-qr-copy small { display: none; }
+.reference-ui #schedule-page .tasks-card { padding: 14px !important; }
+.reference-ui #schedule-page .tasks-card > .section-title { margin: 0 0 4px !important; padding: 0 !important; background: transparent; }
+.reference-ui #schedule-page .tasks-card .work-task-row { padding-block: 7px !important; }
+.reference-ui #schedule-page .tasks-card .edit-work { min-height: 44px; }
+@media (max-width: 360px) {
+  .reference-ui #schedule-page .home-toolbar-caption { font-size: 11px; }
+  .reference-ui #schedule-page .home-quick-actions button { padding-inline: 6px; }
+}

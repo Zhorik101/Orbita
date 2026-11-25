@@ -78,8 +78,8 @@ function changeHomeCard(id,action){
 function renderHome(){
  const layout=currentHomeLayout();
  homeRoot.classList.toggle('home-editing',homeEditing);
- homeToolbar.innerHTML=homeEditing?'<div><b>Изменить главный экран</b><small>Порядок — за ⠿ · размер — за угол</small></div><div class="home-toolbar-actions"><button id="home-cancel">Отмена</button><button class="home-done" id="home-done">Готово</button></div>':'<div><span class="eyebrow">МОИ КАРТОЧКИ</span><small>Всё важное в твоём порядке</small></div><button class="home-edit-button" id="home-edit">☷ Изменить</button>';
- if(!homeEditing&&window.OrbitaAndroid?.loadMireaGrades){
+ homeToolbar.innerHTML=homeEditing?'<div><b>Изменить главный экран</b><small>Порядок — за ⠿ · размер — за угол</small></div><div class="home-toolbar-actions"><button id="home-cancel">Отмена</button><button class="home-done" id="home-done">Готово</button></div>':'<div><b>Мои карточки</b></div><button class="home-edit-button" id="home-edit">Изменить</button>';
+ if(!homeEditing){
   const edit=$('#home-edit');
   edit.previousElementSibling.classList.add('home-toolbar-caption');
   const actions=document.createElement('div');
@@ -90,7 +90,17 @@ function renderHome(){
   grades.textContent='Баллы БРС';
   grades.onclick=()=>{showPage('mini-courses');window.scrollTo(0,0)};
   edit.replaceWith(actions);
-  actions.append(grades,edit);
+  if(window.OrbitaAndroid?.loadMireaGrades)actions.append(grades);
+  if(window.OrbitaAndroid?.openAttendanceScanner&&!layout.some(card=>card.id==='attendanceQr')){
+   const qr=document.createElement('button');
+   qr.type='button';
+   qr.className='home-grades-shortcut';
+   qr.textContent='QR';
+   qr.setAttribute('aria-label','Сканировать QR посещения');
+   qr.onclick=()=>openAttendanceScanner();
+   actions.append(qr);
+  }
+  actions.append(edit);
  }
  if(homeEditing){$('#home-cancel').onclick=cancelHomeEdit;$('#home-done').onclick=commitHomeLayout}else $('#home-edit').onclick=startHomeEdit;
  homeCards.forEach(card=>homeParking.appendChild(card));
