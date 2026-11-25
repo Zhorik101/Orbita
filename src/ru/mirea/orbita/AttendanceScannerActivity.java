@@ -61,7 +61,8 @@ public final class AttendanceScannerActivity extends Activity implements Surface
     private Camera.Size frameSize;
     private boolean rotatedPreview;
     private float pinchTarget = 100;
-    private boolean resumed;
+    private boolean resumed, scanAccepted;
+    private Button permissionAction;
     private boolean surfaceReady;
 
     @Override public void onCreate(Bundle savedInstanceState) {
@@ -123,7 +124,7 @@ public final class AttendanceScannerActivity extends Activity implements Surface
             @Override public void onSurfaceTextureAvailable(SurfaceTexture texture, int width, int height) {startPreview();}
             @Override public void onSurfaceTextureSizeChanged(SurfaceTexture texture, int width, int height) {}
             @Override public void onSurfaceTextureUpdated(SurfaceTexture texture) {}
-            @Override public boolean onSurfaceTextureDestroyed(SurfaceTexture texture) {stopPreview();return true;}
+            @Override public boolean onSurfaceTextureDestroyed(SurfaceTexture texture) {if(logicalRunning)stopPreview();return true;}
         });
         cameraFrame.addOnLayoutChangeListener((view,left,top,right,bottom,ol,ot,or,ob) -> {
             if (right-left!=or-ol || bottom-top!=ob-ot) fitPreview();
@@ -192,6 +193,19 @@ public final class AttendanceScannerActivity extends Activity implements Surface
         hint.setTextColor(Color.WHITE);
         hint.setPadding(dp(16), dp(18), dp(16), dp(18));
         root.addView(hint, new LinearLayout.LayoutParams(-1, -2));
+        permissionAction = new Button(this);
+        permissionAction.setAllCaps(false);
+        permissionAction.setText("Разрешить камеру");
+        permissionAction.setVisibility(View.GONE);
+        permissionAction.setOnClickListener(view -> {
+            if (shouldShowRequestPermissionRationale(Manifest.permission.CAMERA)) {
+                requestPermissions(new String[]{Manifest.permission.CAMERA}, CAMERA_PERMISSION);
+            } else {
+                startActivity(new Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                    Uri.fromParts("package", getPackageName(), null)));
+            }
+        });
+        root.addView(permissionAction, new LinearLayout.LayoutParams(-1, -2));
         setContentView(root);
         if (checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED)
             requestPermissions(new String[]{Manifest.permission.CAMERA}, CAMERA_PERMISSION);
@@ -263,6 +277,8 @@ public final class AttendanceScannerActivity extends Activity implements Surface
     @Override protected void onResume() {
         super.onResume();
         resumed = true;
+        if (checkSelfPermission(Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED)
+            permissionAction.setVisibility(View.GONE);
         startPreview();
     }
 
@@ -275,8 +291,13 @@ public final class AttendanceScannerActivity extends Activity implements Surface
     @Override public void onRequestPermissionsResult(int code, String[] permissions, int[] results) {
         super.onRequestPermissionsResult(code, permissions, results);
         if (code != CAMERA_PERMISSION) return;
-        if (results.length > 0 && results[0] == PackageManager.PERMISSION_GRANTED) startPreview();
-        else hint.setText("Разреши Орбите доступ к камере в настройках Android");
+        if (results.length > 0 && results[0] == PackageManager.PERMISSION_GRANTED) {
+            permissionAction.setVisibility(View.GONE);
+            startPreview();
+        } else {
+            hint.setText("Для сканирования QR нужен доступ к камере.");
+            permissionAction.setVisibility(View.VISIBLE);
+        }
     }
 
     @Override public void surfaceCreated(SurfaceHolder holder) {
@@ -292,7 +313,7 @@ public final class AttendanceScannerActivity extends Activity implements Surface
     }
 
     private void startPreview() {
-        if (!resumed || checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) return;
+        if (!resumed || scanAccepted || checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) return;
         if (logicalCamera != null) {
             if (logicalRunning || !logicalPreview.isAvailable()) return;
             logicalRunning = true;
@@ -357,14 +378,13 @@ public final class AttendanceScannerActivity extends Activity implements Surface
         if (logicalCamera == null && frameSize == null) return;
         int width = logicalCamera == null ? frameSize.width : logicalCamera.frameSize.getWidth();
         int height = logicalCamera == null ? frameSize.height : logicalCamera.frameSize.getHeight();
-        int rotatedWidth = rotatedPreview ? height : width, rotatedHeight = rotatedPreview ? width : height;
-        float factor = Math.max(cameraFrame.getWidth() / (float) rotatedWidth, cameraFrame.getHeight() / (float) rotatedHeight);
-        displayedWidth = Math.round(rotatedWidth * factor);
-        displayedHeight = Math.round(rotatedHeight * factor);
+        var size = ScannerPreviewGeometry.cover(width,height,cameraFrame.getWidth(),cameraFrame.getHeight(),rotatedPreview);
+        displayedWidth = size.width();
+        displayedHeight = size.height();
         if (logicalCamera == null) {
             preview.setLayoutParams(new FrameLayout.LayoutParams(displayedWidth, displayedHeight, Gravity.CENTER));
         } else {
-            logicalPreview.setLayoutParams(new FrameLayout.LayoutParams(Math.round(width * factor), Math.round(height * factor), Gravity.CENTER));
+            logicalPreview.setLayoutParams(new FrameLayout.LayoutParams(rotatedPreview ? displayedHeight : displayedWidth, rotatedPreview ? displayedWidth : displayedHeight, Gravity.CENTER));
             logicalPreview.setRotation(logicalCamera.orientation);
         }
     }
@@ -372,8 +392,9 @@ public final class AttendanceScannerActivity extends Activity implements Surface
     private void switchCamera() {
         if (logicalCamera != null) {
             float wide = logicalCamera.range.getLower();
-            float next = wide < 1 ? (logicalCamera.zoom() < 1 ? 1 : wide)
-                : (logicalCamera.zoom() < 2 ? 2 : 1);
+            float current = logicalCamera.zoom();
+            float next = current < 0.95f ? 1 : current < 1.95f && logicalCamera.range.getUpper() >= 2
+                ? 2 : wide < 1 ? wide : 1;
             logicalCamera.zoom(next);
             updateCameraLabel();
             return;
@@ -419,16 +440,19 @@ public final class AttendanceScannerActivity extends Activity implements Surface
     }
 
     private void decodeFrame(byte[] data, int width, int height) {
+        if (!resumed || scanAccepted) return;
         if (data != null && data.length >= width * height && displayedWidth > 0 && displayedHeight > 0) {
             try {
                 float target = finderSize();
-                int cropWidth = Math.min(width, Math.max(1, Math.round(width * target / (rotatedPreview ? displayedHeight : displayedWidth))));
-                int cropHeight = Math.min(height, Math.max(1, Math.round(height * target / (rotatedPreview ? displayedWidth : displayedHeight))));
+                var crop = ScannerPreviewGeometry.crop(width,height,
+                    new ScannerPreviewGeometry.Size(displayedWidth,displayedHeight),target,rotatedPreview);
+                int cropWidth = crop.width(), cropHeight = crop.height();
                 var frame = new PlanarYUVLuminanceSource(data, width, height,
                     (width - cropWidth) / 2, (height - cropHeight) / 2, cropWidth, cropHeight, false);
                 String decoded = reader.decode(new BinaryBitmap(new HybridBinarizer(frame))).getText();
                 Uri link = Uri.parse(decoded);
                 if (PulseGradesActivity.isAttendanceLink(link)) {
+                    scanAccepted = true;
                     stopPreview();
                     startActivity(new Intent(this, PulseGradesActivity.class)
                         .setData(link)

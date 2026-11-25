@@ -30,7 +30,7 @@ public final class PulseGradesActivity extends Activity {
     private LinearLayout body;
     private WebView loginWeb;
     private Uri attendanceLink;
-    private boolean accountScreen;
+    private boolean accountScreen, attendanceInFlight;
     private int background, foreground, accent, panel;
 
     @Override public void onCreate(Bundle savedInstanceState) {
@@ -158,6 +158,13 @@ public final class PulseGradesActivity extends Activity {
     }
 
     private void submitAttendance(String cookie) {
+        if (attendanceInFlight) return;
+        var connectivity = getSystemService(android.net.ConnectivityManager.class);
+        if (connectivity != null && connectivity.getActiveNetwork() == null) {
+            message("Нет сети. QR ещё не отправлен.", "Повторить", () -> submitAttendance(session()));
+            return;
+        }
+        attendanceInFlight = true;
         message("Отправляем личную отметку…", null, null);
         network.execute(() -> {
             try {
@@ -166,9 +173,12 @@ public final class PulseGradesActivity extends Activity {
                     .putLong("mirea_attendance_revision", System.currentTimeMillis()).apply();
                 onScreen(() -> message(marked ? "Посещение отмечено." : "МИРЭА не подтвердила отметку. Проверь, что код ещё действует.", "Закрыть", this::finish));
             } catch (MireaAcademicApi.SignInRequired error) {
-                onScreen(() -> showSignIn("Для отметки нужно войти в МИРЭА."));
+                onScreen(() -> {
+                    attendanceInFlight = false;
+                    showSignIn("Для отметки нужно войти в МИРЭА.");
+                });
             } catch (Exception error) {
-                onScreen(() -> message(failure(error), "Закрыть", this::finish));
+                onScreen(() -> message("Ответ об отметке не получен. Проверь журнал посещений перед повторным сканированием.", "Закрыть", this::finish));
             }
         });
     }

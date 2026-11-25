@@ -331,6 +331,16 @@ window.orbitaMireaDailyMarks=(request,result)=>{
  dailyAttendance.set(key,result);
  if(page==='pairs'&&dateKey(pairsDate)===key)renderPairs();
 };
+function retryVisibleAttendance(){
+ if(document.hidden||page!=='pairs'||pairsMode!=='day'||!ownPairsSelected())return;
+ const day=dateKey(pairsDate);
+ const cached=dailyAttendance.get(day);
+ if(cached?.error&&cached.error!=='login')dailyAttendance.delete(day);
+ for(const [id,result] of attendanceByCourse)if(result?.error&&result.error!=='login')attendanceByCourse.delete(id);
+ requestDailyAttendance(pairsDate);
+}
+window.addEventListener('online',retryVisibleAttendance);
+document.addEventListener('visibilitychange',retryVisibleAttendance);
 function lessonAttendance(lesson,date,request=false){
  if(!ownPairsSelected())return null;
  const epoch=Date.parse(`${dateKey(date)}T${lesson.start}:00+03:00`)/1000;
