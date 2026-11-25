@@ -17,6 +17,8 @@ const {chromium}=require('playwright');
     read:()=>localStorage.getItem('fixture-profile')||'',
     write:json=>{localStorage.setItem('fixture-profile',json);return true},
     sdoFiles:()=>JSON.stringify(window.deviceFiles),
+    workAttachments:()=>JSON.stringify(window.googleAttachmentFixture||{}),
+    shareStudyFile:(text,id)=>{window.sharedStudyFile={text,id}},
     attachSdoWorkFile:(workId,fileId)=>{window.calendarFile={workId,fileId}},
     saveSdoToDownloads:id=>{window.savedDownloadId=id},
     downloadSdoMaterial:(url,id)=>{window.downloadCall={url,id}},
@@ -88,7 +90,10 @@ const {chromium}=require('playwright');
   await page.getByRole('button',{name:/Методичка.pdf/}).click();
   await page.getByRole('button',{name:'Открыть офлайн'}).click();
   await page.getByRole('button',{name:'Экспорт файла'}).click();
-  await page.getByRole('button',{name:'Привязать к задаче'}).click();
+  const taskSelector=page.locator('#sdo-pick-task select');
+  if(!await taskSelector.count())await page.getByRole('button',{name:'Показать все задачи'}).click();
+  await taskSelector.selectOption({index:1});
+  await page.getByRole('button',{name:'Прикрепить к задаче'}).click();
   assert.equal(await page.evaluate(()=>window.nativeCalls.at(-1)),'export:'+'a'.repeat(64));
   await page.evaluate(()=>document.querySelector('#modal').close());
   await page.evaluate(()=>{
@@ -172,6 +177,8 @@ const {chromium}=require('playwright');
   await page.locator('#sdo-save-downloads').click();
   assert.equal(await page.evaluate(()=>window.savedDownloadId),downloaded);
   await page.locator('#sdo-create-file-task').click();
+  assert.equal(await page.locator('#work-custom-title').inputValue(),'Lab');
+  await page.locator('#save-work-template').click();
   assert(await page.evaluate(id=>state.tasks.some(task=>task.subject==='Химия'&&state.sdo.attachments[task.workId]?.includes(id)),downloaded));
   await page.evaluate(()=>{
    document.querySelector('#modal').close();
@@ -196,7 +203,7 @@ const {chromium}=require('playwright');
   assert.equal(await attachments.count(),0);
   assert(await page.evaluate(id=>state.sdo.items.some(row=>row.id===id),downloaded));
   await page.evaluate(id=>{
-   const task=state.tasks.find(row=>row.text==='Lab.pdf');
+   const task=state.tasks.find(row=>row.text==='Lab');
    task.dueISO='2026-12-01';
    state.calendarAutoSync={tasks:true};
    const picker=document.createElement('div');
@@ -220,6 +227,14 @@ const {chromium}=require('playwright');
   assert.match(await page.locator('[data-draft-files]').innerText(),/Lab.pdf/);
   await page.locator('#work-ai').click();
   assert.match(await page.locator('#study-ai-text').inputValue(),/Модель[\s\S]*Lab.pdf/);
+  await page.getByRole('button',{name:'Текст и файл: Lab.pdf'}).click();
+  assert.equal(await page.evaluate(()=>window.sharedStudyFile.id),downloaded);
+  const drivePrompt=await page.evaluate(()=>{
+   window.googleAttachmentFixture={files:[{name:'Методичка.pdf',url:'https://drive.google.com/file/d/test-id/view?auth=secret'}]};
+   return studyPrompt({text:'Модель'},[],'full');
+  });
+  assert.match(drivePrompt,/https:\/\/drive.google.com\/file\/d\/test-id\/view/);
+  assert(!drivePrompt.includes('secret'));
   const redacted=await page.evaluate(()=>studyPrompt({text:'Модель',comment:'password=secret',sdoUrl:'https://online-edu.mirea.ru/mod/assign/view.php?id=14&sesskey=secret'},[],'full'));
   assert(!redacted.includes('secret'));
   await page.getByRole('button',{name:'К задаче',exact:true}).click();
@@ -227,8 +242,43 @@ const {chromium}=require('playwright');
   await page.locator('#work-save-sync').click();
   await page.locator('#study-sync-start').click();
   assert.equal(await page.evaluate(()=>window.calendarFile.fileId),downloaded);
+  await page.evaluate(()=>{
+   window.googleAttachmentFixture={drivePending:{name:'Lab.pdf',url:'https://drive.google.com/file/d/test-id/view'}};
+   window.orbitaAttachmentResult(window.calendarFile.workId,'Файл на Диске. Ожидаем событие Google…');
+  });
+  assert.equal(await page.locator('#study-sync-files').innerText(),'1 из 1');
+  assert.equal(await page.locator('#study-sync-event-files').innerText(),'0 из 1');
   await page.evaluate(()=>window.orbitaAttachmentResult(window.calendarFile.workId,'Файл прикреплён в Google Календаре.'));
   assert.equal(await page.locator('#study-sync-files').innerText(),'1 из 1');
+  assert.equal(await page.locator('#study-sync-event-files').innerText(),'1 из 1');
+  await page.evaluate(()=>{
+   state.tasks.push({workId:'work_other',subject:'Иностранный язык',text:'Пересказ',done:false});
+   const root=document.createElement('div');
+   root.id='task-choice-fixture';document.body.append(root);
+   const file=state.sdo.items.find(item=>item.title==='Lab.pdf');
+   paintSdoTaskChoice(root,file,false);
+  });
+  const choice=page.locator('#task-choice-fixture');
+  assert(!((await choice.innerText()).includes('Пересказ')));
+  await choice.getByRole('button',{name:'Показать все задачи'}).evaluate(button=>button.click());
+  assert.match(await choice.innerText(),/Пересказ/);
+  assert.equal(await choice.locator('select').inputValue(),'');
+  assert.equal(await choice.getByRole('button',{name:'Прикрепить к задаче'}).isDisabled(),true);
+  await page.evaluate(()=>{
+   const course='https://online-edu.mirea.ru/course/view.php?id=900';
+   const folder='https://online-edu.mirea.ru/mod/folder/view.php?id=90';
+   const pdf=Array.from({length:16},(_,i)=>({title:'Практика '+(i+1),url:'https://online-edu.mirea.ru/pluginfile.php/90/mod_folder/content/0/'+(i+1)+'.pdf'}));
+   const firstScan={pages:[{links:[{url:course,title:'Философия'}]},
+    {course,links:[{url:folder,title:'Практические занятия Папка'}]},
+    {course,parent:folder,links:pdf}],resume:[]};
+   window.orbitaSdoPortalImport(JSON.stringify(firstScan));
+   window.orbitaSdoPortalImport(JSON.stringify(firstScan));
+  });
+  assert.equal(await page.evaluate(()=>{
+   const folder=state.sdo.items.find(item=>item.title==='Практические занятия');
+   const course=state.sdo.items.find(item=>item.title==='Философия');
+   return state.sdo.items.filter(item=>item.courseId===course.id&&item.assignmentId===folder.id).length;
+  }),16);
   assert.deepEqual(errors,[]);
   console.log('PASS saved SDO links, manual course structure, task linking, import cancellation, offline bridge, profile and mobile UI');
  }finally{await browser.close()}
