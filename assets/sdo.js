@@ -44,7 +44,9 @@ function updateSdoItem(item){
 }
 function sdoCourses(){return state.sdo.items.filter(item=>item.kind==='course')}
 function sdoDisciplineOf(item){
- return item.discipline||sdoCourses().find(course=>course.id===item.courseId)?.discipline||null;
+ const course=item.kind==='course'?item:sdoCourses().find(entry=>entry.id===item.courseId);
+ return item.discipline||course?.discipline||
+  inferSdoDiscipline(course?.title||item.title,courseGradeResult?.courses||[]);
 }
 function sdoItemsForDiscipline(course){
  return state.sdo.items.filter(item=>sameSdoDiscipline(sdoDisciplineOf(item),course));
@@ -53,6 +55,12 @@ function sdoExternal(url,text){
  return `<a class="sdo-action" data-sdo-portal href="${safe(url)}">${safe(text)} ↗</a>`;
 }
 document.addEventListener('click',event=>{
+ const download=event.target.closest?.('[data-sdo-download]');
+ if(download&&window.OrbitaAndroid?.downloadSdoMaterial){
+  event.preventDefault();
+  window.OrbitaAndroid.downloadSdoMaterial(download.href,download.dataset.sdoDownload);
+  return;
+ }
  const link=event.target.closest?.('[data-sdo-portal]');
  if(!link||!window.OrbitaAndroid?.openSdoPortal)return;
  event.preventDefault();
@@ -84,35 +92,43 @@ window.orbitaSdoPortalImport=json=>{
   seen.set(url,item);items.push(item);
   return item;
  }
- let currentCourse=null;
+ let currentCourse=null, refreshedItem=null;
  for(const result of pages){
   if(!Array.isArray(result?.links))continue;
-  const portalCourse=canonicalSdoLink(result.course);
   const parent=seen.get(canonicalSdoLink(result.parent));
+  const portalCourse=canonicalSdoLink(result.course)||items.find(entry=>parent?.courseId===entry.id)?.url||'';
   let course=portalCourse&&portalCourse.includes('/course/view.php?')?seen.get(portalCourse):null;
   if(portalCourse&&!course&&portalCourse.includes('/course/view.php?')){
    course=add(portalCourse,result.title||'Курс '+new URL(portalCourse).searchParams.get('id'),'course');
   }
   const types={assign:'assignment',quiz:'quiz',forum:'forum',page:'page',folder:'folder',url:'link',lesson:'lesson',resource:'material'};
-  if(course&&!batch)currentCourse=course;
+  if(course&&!batch){currentCourse=course;refreshedItem=parent}
   for(const row of result.links.slice(0,100)){
    const url=canonicalSdoLink(row?.url);
    if(!url)continue;
    if(course){
     const path=new URL(url).pathname;
     const module=path.split('/')[2];
-    if(path.startsWith('/pluginfile.php/'))add(url,row.title,'material',course.id,row.section,parent?.kind==='assignment'?parent.id:'');
+    if(path.startsWith('/pluginfile.php/')){
+     const existing=seen.get(url);
+     if(existing&&parent&&!existing.assignmentId&&existing.courseId===course.id){
+      const updated={...existing,assignmentId:parent.id,section:row.section||parent.section||existing.section};
+      items[items.indexOf(existing)]=updated;
+      seen.set(url,updated);
+     }else add(url,row.title,'material',course.id,row.section||parent?.section||'',parent?.id||'');
+    }
     else if(path.startsWith('/mod/'))add(url,row.title,types[module]||'other',course.id,row.section);
    }else if(!portalCourse&&url.includes('/course/view.php?'))add(url,row.title,'course');
   }
  }
  const added=items.length-state.sdo.items.length;
- if(added&&!saveSdo({...state.sdo,items}))return;
+ if((added||items.some((item,i)=>item!==state.sdo.items[i]))&&!saveSdo({...state.sdo,items}))return;
  if(page==='mini-sdo'){
   activeSdoCourse=currentCourse?.id||'';
   sdoMode='courses';sdoCourseTab='overview';
   paintSdo();
  }
+ if(refreshedItem)showSdoItem(refreshedItem);
  if(batch){toast('Добавлено ссылок: '+added+(payload.skipped?' · Не проверено страниц: '+Number(payload.skipped):''));return}
  toast(added?'Добавлено ссылок: '+added:'Эти ссылки уже есть в каталоге или каталог заполнен.');
 };
@@ -154,10 +170,13 @@ function sdoItemText(item){
 function sdoDownloadable(item){
  return item.url.includes('/pluginfile.php/') || item.url.includes('/mod/resource/view.php?');
 }
+function sdoDownloadLink(item,text='Скачать'){
+ return `<a class="sdo-action" data-sdo-portal data-sdo-download="${safe(item.id)}" href="${safe(item.url)}">${safe(text)} ↗</a>`;
+}
 function sdoItemHtml(item){
  return `<article class="course-discipline sdo-item">
   <button type="button" class="sdo-item-title" data-sdo-item="${item.id}">${safe(item.title)} ${courseChevron()}</button>
-  ${sdoDownloadable(item)?sdoExternal(item.url,'Скачать'):''}
+  ${sdoDownloadable(item)?sdoDownloadLink(item):''}
   <p>${safe(sdoItemText(item))}</p></article>`;
 }
 function groupedSdoItems(items){
@@ -287,6 +306,37 @@ window.orbitaSdoFilesChanged=(message,ids)=>{
  if(page==='mini-discipline')window.paintDiscipline?.();
 };
 
+window.orbitaSdoDownloaded=(sourceId,id)=>{
+ const source=state.sdo.items.find(item=>item.id===sourceId);
+ syncSdoFiles([id],source?{courseId:source.courseId,assignmentId:source.assignmentId,discipline:sdoDisciplineOf(source)}:null);
+ const file=state.sdo.items.find(item=>item.id===id);
+ if(!file){toast('Файл скачан. Открой локальную библиотеку.');return}
+ if(source){
+  const next={...file,courseId:file.courseId||source.courseId,assignmentId:file.assignmentId||source.assignmentId,
+   discipline:file.discipline||sdoDisciplineOf(source)};
+  if(next.courseId!==file.courseId||next.assignmentId!==file.assignmentId||next.discipline!==file.discipline)updateSdoItem(next);
+ }
+ if(page==='mini-sdo')paintSdo();
+ window.paintDiscipline?.();
+ const item=state.sdo.items.find(entry=>entry.id===id);
+ const discipline=sdoDisciplineOf(item);
+ const tasks=state.tasks.filter(task=>task.workId&&!task.done)
+  .sort((left,right)=>Number(right.subject===discipline?.name)-Number(left.subject===discipline?.name));
+ modal(`<h2>Файл скачан</h2><p>${safe(item.title)}</p>
+   <p>${discipline?safe(discipline.name):'Дисциплину можно выбрать в библиотеке.'}</p>
+   <div class="work-chips"><button id="sdo-save-downloads" type="button">Сохранить в «Загрузки»</button>
+   <button id="sdo-create-file-task" type="button">Создать задачу с файлом</button></div>
+   ${tasks.length?`<label class="control-field">Задача <select id="sdo-download-task">${tasks.map((task,i)=>
+    `<option value="${i}">${safe(task.text)}</option>`).join('')}</select></label>
+    <button type="button" id="sdo-attach-download">Прикрепить к задаче</button>`:''}`);
+ $('#sdo-save-downloads').onclick=()=>window.OrbitaAndroid?.saveSdoToDownloads?.(id);
+ $('#sdo-create-file-task').onclick=()=>newSdoTask(item);
+ $('#sdo-attach-download')?.addEventListener('click',()=>{
+  const task=tasks[Number($('#sdo-download-task').value)];
+  if(task&&setSdoAttachment(task.workId,id)){$('#modal').close();toast('Файл прикреплён к задаче')}
+ });
+};
+
 const pageBeforeSdo=showPage;
 showPage=function(destination){
  pageBeforeSdo(destination);
@@ -401,15 +451,18 @@ function showSdoItem(item){
  modal(`<h2>${safe(item.title)}</h2><p>${safe(sdoItemText(item))}</p>${item.section?`<p>${safe(item.section)}</p>`:''}
   <div class="work-chips">
   ${item.document?file?'<button type="button" id="sdo-open-file">Открыть офлайн</button><button type="button" id="sdo-export-file">Экспорт файла</button><button type="button" id="sdo-remove-file">Удалить локальную копию</button>':
-   '<p>Файл не входит в JSON-копию. Импортируй его с устройства, чтобы восстановить открытие.</p>':sdoExternal(item.url,sdoDownloadable(item)?'Скачать':'Открыть оригинал в СДО')}
+   '<p>Файл не входит в JSON-копию. Импортируй его с устройства, чтобы восстановить открытие.</p>':sdoDownloadable(item)?sdoDownloadLink(item):sdoExternal(item.url,'Открыть оригинал в СДО')}
   <button type="button" id="sdo-edit-item">Изменить</button>
+  ${['folder','page','assignment'].includes(item.kind)&&window.OrbitaAndroid?.syncSdoPortal?
+   '<button type="button" id="sdo-sync-materials">Обновить файлы</button>':''}
   ${item.kind==='assignment'?`<button type="button" id="sdo-new-task">${linked?'Открыть связанную задачу':'Создать личную задачу'}</button>
    ${window.OrbitaAndroid?.importSdoFiles?'<button type="button" id="sdo-import-assignment">Импортировать вложения задания</button>':''}`:''}</div>
-  ${files.length?`<h3>Материалы задания</h3>${files.map(row=>sdoDownloadable(row)?sdoExternal(row.url,'Скачать «'+row.title+'»'):`<button type="button" class="sdo-item-title" data-assignment-material="${row.id}">${safe(row.title)}</button>`).join('')}`:''}
+  ${files.length?`<h3>${item.kind==='assignment'?'Материалы задания':'Файлы'}</h3>${files.map(row=>sdoDownloadable(row)?sdoDownloadLink(row,'Скачать «'+row.title+'»'):`<button type="button" class="sdo-item-title" data-assignment-material="${row.id}">${safe(row.title)}</button>`).join('')}`:''}
   ${tasks.length?`<label class="control-field">Личная задача <select id="sdo-task-choice">${tasks.map((task,i)=>
    `<option value="${i}">${safe(task.text)}</option>`).join('')}</select></label>
    <button type="button" id="sdo-link-task">Привязать к задаче</button>`:''}`);
  $('#sdo-edit-item').onclick=()=>editSdoItem(item);
+ $('#sdo-sync-materials')?.addEventListener('click',()=>window.OrbitaAndroid.syncSdoPortal(item.url));
  const taskButton=$('#sdo-new-task');
  if(taskButton)taskButton.onclick=()=>newSdoTask(item);
  const importAssignment=$('#sdo-import-assignment');

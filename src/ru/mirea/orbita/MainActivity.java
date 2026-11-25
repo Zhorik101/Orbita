@@ -196,22 +196,30 @@ public class MainActivity extends Activity {
             runOnUiThread(new Runnable(){@Override public void run(){try{startActivity(Intent.createChooser(new Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT,"Приглашение в команду Орбиты: "+link),"Пригласить в команду"));}catch(Exception ignored){}}});
         }
 
-        @JavascriptInterface public void openSdoPortal(String url) { launchSdoPortal(url,false); }
-        @JavascriptInterface public void syncSdoPortal(String url) { launchSdoPortal(url,true); }
-        private void launchSdoPortal(String url,boolean sync) {
+        @JavascriptInterface public void openSdoPortal(String url) { launchSdoPortal(url,false,""); }
+        @JavascriptInterface public void syncSdoPortal(String url) { launchSdoPortal(url,true,""); }
+        @JavascriptInterface public void downloadSdoMaterial(String url,String id) {
+            if (id == null || !id.matches("sdo_[a-f0-9]{32}")) return;
+            if (SdoPortalLinks.fileLink(url).isEmpty() && !SdoPortalLinks.bookmark(url).contains("/mod/resource/view.php?")) return;
+            launchSdoPortal(url,false,id);
+        }
+        private void launchSdoPortal(String url,boolean sync,String downloadId) {
             if (!SdoPortalLinks.portal(url)) return;
             String page = SdoPortalLinks.bookmark(url);
             if (page.isEmpty() && !sync) page = SdoPortalLinks.fileLink(url);
             if (page.isEmpty()) page = "https://online-edu.mirea.ru/my/courses.php".equals(url) ? url : SdoPortalLinks.HOME;
             String target = page;
             runOnUiThread(() -> startActivityForResult(new Intent(MainActivity.this,SdoPortalActivity.class)
-                .putExtra("url",target).putExtra("sync",sync),SdoPortalActivity.REQUEST));
+                .putExtra("url",target).putExtra("sync",sync).putExtra("sdoDownloadId",downloadId),SdoPortalActivity.REQUEST));
         }
         @JavascriptInterface public String sdoFiles() { return sdoMaterials.list(); }
         @JavascriptInterface public void importSdoFiles() { runOnUiThread(sdoMaterials::choose); }
         @JavascriptInterface public void cancelSdoImport() { sdoMaterials.cancel(); }
         @JavascriptInterface public void openSdoFile(String id) { if (validSdoId(id)) runOnUiThread(() -> sdoMaterials.open(id)); }
         @JavascriptInterface public void exportSdoFile(String id) { if (validSdoId(id)) runOnUiThread(() -> sdoMaterials.export(id)); }
+        @JavascriptInterface public void saveSdoToDownloads(String id) {
+            if (validSdoId(id)) runOnUiThread(() -> sdoMaterials.saveToDownloads(id));
+        }
         @JavascriptInterface public void deleteSdoFiles(String payload) { sdoMaterials.remove(payload); }
         private boolean validSdoId(String id) { return id != null && id.matches("[a-f0-9]{64}"); }
 
@@ -608,7 +616,7 @@ public class MainActivity extends Activity {
             if (resultCode == RESULT_OK && data != null) {
                 String document = data.getStringExtra("sdoDocument");
                 if (document != null) {
-                    sdoMaterials.importPortalDocument(document);
+                    sdoMaterials.importPortalDocument(document,data.getStringExtra("sdoDownloadId"));
                     return;
                 }
                 String payload = data.getStringExtra("sdoImport");

@@ -89,7 +89,7 @@ final class SdoMaterials {
         return results.toString();
     }
 
-    void importPortalDocument(String value) {
+    void importPortalDocument(String value,String downloadId) {
         if (value == null || value.length() > 2000) return;
         Uri uri=Uri.parse(value);
         var segments=uri.getPathSegments();
@@ -99,7 +99,10 @@ final class SdoMaterials {
         IO.execute(()->{
             cancelled=false;
             try {
-                finish("Файл сохранён в библиотеке.",new JSONArray().put(importOne(uri)));
+                String id = importOne(uri);
+                if (downloadId != null && downloadId.matches("sdo_[a-f0-9]{32}")) {
+                    notifyJs("window.orbitaSdoDownloaded?.(" + JSONObject.quote(downloadId) + "," + JSONObject.quote(id) + ")");
+                } else finish("Файл сохранён в библиотеке.",new JSONArray().put(id));
             } catch (ImportFailure error) { finish(error.getMessage(),new JSONArray()); }
             catch (Exception error) { finish("Не удалось добавить документ в библиотеку.",new JSONArray()); }
             finally { new File(new File(activity.getCacheDir(),"sdo-portal-downloads"),segments.get(1)).delete(); }
@@ -127,6 +130,36 @@ final class SdoMaterials {
                 .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
             activity.startActivity(intent);
         } catch (Exception error) { finish("Файл недоступен или на телефоне нет приложения для его формата.", new JSONArray()); }
+    }
+
+    void saveToDownloads(String id) {
+        if (android.os.Build.VERSION.SDK_INT < 29) { export(id); return; }
+        IO.execute(() -> {
+            var resolver = activity.getContentResolver();
+            Uri destination = null;
+            try {
+                var details = metadata(id);
+                var item = file(id,details);
+                if (item == null || !item.isFile()) throw new IOException();
+                var values = new android.content.ContentValues();
+                values.put(android.provider.MediaStore.Downloads.DISPLAY_NAME,details.getString("name"));
+                values.put(android.provider.MediaStore.Downloads.MIME_TYPE,TYPES.get(details.getString("extension")));
+                values.put(android.provider.MediaStore.Downloads.IS_PENDING,1);
+                destination = resolver.insert(android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI,values);
+                if (destination == null) throw new IOException();
+                try (var in = new FileInputStream(item); var out = resolver.openOutputStream(destination,"w")) {
+                    if (out == null) throw new IOException();
+                    copy(in,out,null);
+                }
+                values.clear();
+                values.put(android.provider.MediaStore.Downloads.IS_PENDING,0);
+                if (resolver.update(destination,values,null,null) != 1) throw new IOException();
+                finish("Файл сохранён в «Загрузки».",new JSONArray());
+            } catch (Exception error) {
+                if (destination != null) try { resolver.delete(destination,null,null); } catch (Exception ignored) {}
+                finish("Не удалось сохранить файл в «Загрузки».",new JSONArray());
+            }
+        });
     }
 
     void export(String id) {

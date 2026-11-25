@@ -17,6 +17,8 @@ const {chromium}=require('playwright');
     read:()=>localStorage.getItem('fixture-profile')||'',
     write:json=>{localStorage.setItem('fixture-profile',json);return true},
     sdoFiles:()=>JSON.stringify(window.deviceFiles),
+    saveSdoToDownloads:id=>{window.savedDownloadId=id},
+    downloadSdoMaterial:(url,id)=>{window.downloadCall={url,id}},
     syncSdoPortal:url=>{window.sdoSyncUrl=url},
     importSdoFiles:()=>window.nativeCalls.push('pick'),
     cancelSdoImport:()=>window.nativeCalls.push('cancel'),
@@ -132,11 +134,14 @@ const {chromium}=require('playwright');
    const course='https://online-edu.mirea.ru/course/view.php?id=99';
    const parent='https://online-edu.mirea.ru/mod/assign/view.php?id=17';
    const url='https://online-edu.mirea.ru/pluginfile.php/13/mod_assign/introattachment/0/Practice.pdf';
+   courseGradeResult={courses:[{id:'chem',term:3,name:'Химия'}]};
+   const folder='https://online-edu.mirea.ru/mod/folder/view.php?id=21';
    const other='https://online-edu.mirea.ru/course/view.php?id=100';
    const reply=JSON.stringify({pages:[
-    {links:[{url:other,title:'Другой курс'}]},
+    {links:[{url:other,title:'Химия (часть 1/2)'}]},
     {course,parent,links:[{url:url+'?token=secret',title:'Методичка СДО'}]},
-    {course:other,links:[{url:'https://online-edu.mirea.ru/mod/resource/view.php?id=22',title:'Файл второго курса'}]}
+    {course:other,links:[{url:'https://online-edu.mirea.ru/mod/resource/view.php?id=22',title:'Файл второго курса'},{url:folder,title:'Папка работ'}]},
+    {course:other,parent:folder,links:[{url:'https://online-edu.mirea.ru/pluginfile.php/32/mod_folder/content/0/Lab.pdf',title:'Работа из папки'}]}
    ]});
    window.orbitaSdoPortalImport(reply);
    window.orbitaSdoPortalImport(reply);
@@ -146,10 +151,24 @@ const {chromium}=require('playwright');
   assert.equal(files[0].assignmentId,imported.find(item=>item.kind==='assignment').id);
   assert(!files[0].url.includes('secret'));
   await page.evaluate(()=>window.openSdo());
-  await page.getByRole('button',{name:/Другой курс/}).click();
+  await page.getByRole('button',{name:/Химия \(часть/}).click();
   assert.match(await page.locator('#sdo-content').innerText(),/Файл второго курса/);
-  assert.equal(await page.getByRole('link',{name:'Скачать ↗',exact:true}).getAttribute('href'),
+  assert.equal(await page.locator('a[href$="id=22"]').getAttribute('href'),
    'https://online-edu.mirea.ru/mod/resource/view.php?id=22');
+  await page.getByRole('button',{name:/Папка работ/}).click();
+  await page.getByRole('link',{name:/Скачать «Работа из папки»/}).click();
+  const download=await page.evaluate(()=>window.downloadCall);
+  assert.match(download.url,/Lab.pdf$/);
+  const downloaded='b'.repeat(64);
+  await page.evaluate(({source,id})=>{
+   window.deviceFiles=[{id,name:'Lab.pdf',extension:'pdf',size:123,updated:Date.now()}];
+   window.orbitaSdoDownloaded(source,id);
+  },{source:download.id,id:downloaded});
+  assert.match(await page.locator('#modal').innerText(),/Файл скачан[\s\S]*Химия/);
+  await page.locator('#sdo-save-downloads').click();
+  assert.equal(await page.evaluate(()=>window.savedDownloadId),downloaded);
+  await page.locator('#sdo-create-file-task').click();
+  assert(await page.evaluate(id=>state.tasks.some(task=>task.subject==='Химия'&&state.sdo.attachments[task.workId]?.includes(id)),downloaded));
   assert.deepEqual(errors,[]);
   console.log('PASS saved SDO links, manual course structure, task linking, import cancellation, offline bridge, profile and mobile UI');
  }finally{await browser.close()}

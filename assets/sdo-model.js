@@ -79,3 +79,18 @@ function mergeSdoProfiles(current,incoming,allowedTaskIds){
  return cleanSdoProfile({items:items.map(item=>({...item,courseId:remap.get(item.courseId)||item.courseId,
   assignmentId:remap.get(item.assignmentId)||item.assignmentId})),attachments});
 }
+
+function inferSdoDiscipline(title,courses){
+ const normalize=value=>String(value||'').toLocaleLowerCase('ru').replaceAll('ё','е')
+  .replace(/[^\p{L}\p{N}]+/gu,' ').trim();
+ const name=normalize(title);
+ const matches=courses.map(sdoDiscipline).filter(course=>{
+  if(!course)return false;
+  const subject=normalize(course.name);
+  return subject.length>=4&&(name===subject||name.startsWith(subject+' '));
+ }).sort((a,b)=>normalize(b.name).length-normalize(a.name).length);
+ const best=matches[0];
+ if(!best)return null;
+ const equallySpecific=matches.filter(match=>normalize(match.name).length===normalize(best.name).length);
+ return equallySpecific.every(match=>sameSdoDiscipline(best,match))?best:null;
+}

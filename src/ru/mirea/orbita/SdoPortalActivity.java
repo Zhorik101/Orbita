@@ -32,7 +32,7 @@ public final class SdoPortalActivity extends Activity {
     private volatile boolean cancelled;
     private File pendingFile;
     private boolean transferring;
-    private String startUrl;
+    private String startUrl, downloadId;
     private boolean mainPageFailed, automaticSync;
     private int navigationVersion;
     private record SyncPage(String url, String course) {}
@@ -49,6 +49,8 @@ public final class SdoPortalActivity extends Activity {
         super.onCreate(saved);
         automaticSync = getIntent().getBooleanExtra("sync",false);
         startUrl = getIntent().getStringExtra("url");
+        downloadId = getIntent().getStringExtra("sdoDownloadId");
+        if (downloadId == null) downloadId = "";
         batch = automaticSync && "https://online-edu.mirea.ru/my/courses.php".equals(startUrl);
         if (!SdoPortalLinks.portal(startUrl)) startUrl = SdoPortalLinks.HOME;
         if (Build.VERSION.SDK_INT < 28) { openBrowser(startUrl); finish(); return; }
@@ -102,6 +104,10 @@ public final class SdoPortalActivity extends Activity {
             @Override public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
                 if (!request.isForMainFrame()) return !SdoPortalLinks.trusted(request.getUrl().toString());
                 String url = request.getUrl().toString();
+                if (!downloadId.isEmpty() && SdoPortalLinks.directFile(url)) {
+                    download(url,view.getSettings().getUserAgentString(),null);
+                    return true;
+                }
                 if (SdoPortalLinks.trusted(url)) return false;
                 if ("https".equalsIgnoreCase(request.getUrl().getScheme()) && request.hasGesture()) openBrowser(url);
                 else showStatus("Переход за пределы портала. Если вход не открывается, используй браузер.");
@@ -120,7 +126,7 @@ public final class SdoPortalActivity extends Activity {
                     String requested = SdoPortalLinks.bookmark(startUrl);
                     boolean validPage = syncPage != null
                         ? syncPage.url().equals(SdoPortalLinks.bookmark(url))
-                        : requested.contains("/course/view.php?")
+                        : !requested.isEmpty()
                         ? requested.equals(SdoPortalLinks.bookmark(url))
                         : "/my/".equals(path) || "/my/courses.php".equals(path);
                     if (validPage) {
@@ -147,6 +153,7 @@ public final class SdoPortalActivity extends Activity {
                 showStatus("Этот файл доступен через официальный браузер.");
                 return;
             }
+            if (!downloadId.isEmpty()) { download(url,agent,disposition); return; }
             new AlertDialog.Builder(this).setTitle("Сохранить файл СДО?")
                 .setMessage("Орбита получит один документ с портала. После загрузки выбери, куда его сохранить.")
                 .setNegativeButton("Отмена", null)
@@ -195,7 +202,7 @@ public final class SdoPortalActivity extends Activity {
         String course = SdoPortalLinks.bookmark(page);
         boolean inside = course.contains("/course/view.php?");
         String path = java.net.URI.create(page).getPath();
-        boolean attachments = path.equals("/mod/assign/view.php") || path.equals("/mod/folder/view.php");
+        boolean attachments = path.equals("/mod/assign/view.php") || path.equals("/mod/folder/view.php") || path.equals("/mod/page/view.php");
         if (!inside && !attachments && !"/my/".equals(path) && !"/my/courses.php".equals(path)) {
             showStatus("Открой «Мои курсы» или конкретный курс СДО для импорта ссылок.");
             return;
@@ -204,7 +211,7 @@ public final class SdoPortalActivity extends Activity {
         String script = """
             (() => {
               const inside = location.pathname === '/course/view.php';
-              const attachments = ['/mod/assign/view.php','/mod/folder/view.php'].includes(location.pathname);
+              const attachments = ['/mod/assign/view.php','/mod/folder/view.php','/mod/page/view.php'].includes(location.pathname);
               if (location.origin !== 'https://online-edu.mirea.ru' ||
                   (!inside && !attachments && !['/my/','/my/courses.php'].includes(location.pathname))) return '';
               const seen = new Set(), links = [];
@@ -265,7 +272,7 @@ public final class SdoPortalActivity extends Activity {
                         appendSyncResult(payload);
                         for (int i=0;i<links.length();i++) {
                             String url=links.getJSONObject(i).getString("url");
-                            if (url.contains("/mod/assign/view.php?") || url.contains("/mod/folder/view.php?")) {
+                            if (url.contains("/mod/assign/view.php?") || url.contains("/mod/folder/view.php?") || url.contains("/mod/page/view.php?")) {
                                 enqueueSync(url,syncPage.course());
                             }
                         }
@@ -274,6 +281,7 @@ public final class SdoPortalActivity extends Activity {
                     return;
                 }
                 if (auto) {
+                    if (attachments) payload.put("parent",course);
                     automaticSync=false;
                     setResult(RESULT_OK,new Intent().putExtra("sdoImport",payload.toString()));
                     finish();
@@ -393,6 +401,7 @@ public final class SdoPortalActivity extends Activity {
                 }
                 if (document==null) { showStatus("Не удалось получить документ. Проверь вход в СДО или попробуй через браузер."); return; }
                 pendingFile=document.file();
+                if (!downloadId.isEmpty()) { sendToLibrary(document); return; }
                 new AlertDialog.Builder(this).setTitle("Документ скачан")
                     .setMessage("Сохрани его в библиотеку Орбиты или выбери папку на устройстве.")
                     .setNegativeButton("Отмена",(dialog,which)->discardPending())
@@ -420,7 +429,7 @@ public final class SdoPortalActivity extends Activity {
     private void sendToLibrary(SdoPortalDownload.Document document) {
         try {
             Uri source=androidx.core.content.FileProvider.getUriForFile(this,getPackageName()+".materials",document.file(),document.name());
-            setResult(RESULT_OK,new Intent().putExtra("sdoDocument",source.toString()));
+            setResult(RESULT_OK,new Intent().putExtra("sdoDocument",source.toString()).putExtra("sdoDownloadId",downloadId));
             pendingFile=null;
             finish();
         } catch(RuntimeException error) { discardPending(); showStatus("Не удалось передать документ в библиотеку."); }

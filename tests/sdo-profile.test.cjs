@@ -15,6 +15,9 @@ for(const file of ['sdo-model.js','profile-backup.js'])
   'https://evil@online-edu.mirea.ru/course/view.php?id=81','http://online-edu.mirea.ru/course/view.php?id=81',
   url+'&id=22','https://online-edu.mirea.ru/login/index.php?id=81'])assert.equal(ctx.canonicalSdoLink(invalid),'');
  const discipline={id:'chem',term:3,name:'Химия'};
+ assert.equal(ctx.inferSdoDiscipline('Химия_Экзамен (часть 1/2)',[discipline]).id,'chem');
+ assert.equal(ctx.inferSdoDiscipline('Химия (часть 1/2)',[discipline,{...discipline,term:4}]),null);
+ assert.equal(ctx.inferSdoDiscipline('Химия и физика',[discipline,{id:'chem-phys',term:3,name:'Химия и физика'}]).id,'chem-phys');
  const course={id:courseId,title:'Органическая химия',url:url+'&token=SECRET',discipline};
  const file={id:fileId,title:'Практика.pptx',extension:'pptx',size:2048,courseId,sourceUri:'content://SECRET'};
  const task={workId:'work_1',text:'Подготовиться',subject:'Химия',done:false};
