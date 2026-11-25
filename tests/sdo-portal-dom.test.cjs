@@ -34,4 +34,7 @@ const homework=scan('/mod/assign/view.php?id=8','<main>'+
  '<a href="/pluginfile.php/13/mod_assign/introattachment/0/Practice.pdf?token=SECRET">Методичка</a>'+
  '<a href="/pluginfile.php/13/assignsubmission_file/submission_files/44/Private.pdf">Сданная работа</a></main>');
 assert.deepEqual(homework,[{url:'https://online-edu.mirea.ru/pluginfile.php/13/mod_assign/introattachment/0/Practice.pdf',title:'Методичка',section:''}]);
+const folder=scan('/mod/folder/view.php?id=12','<div role="main">Пустая область</div>'+
+ '<div class="foldertree"><a hidden href="/pluginfile.php/32/mod_folder/content/0/L1.pdf?forcedownload=1">Л1.pdf</a></div>');
+assert.deepEqual(folder,[{url:'https://online-edu.mirea.ru/pluginfile.php/32/mod_folder/content/0/L1.pdf',title:'Л1.pdf',section:''}]);
 console.log('PASS visible course links, section titles, duplicate and secret stripping in portal DOM fixture');

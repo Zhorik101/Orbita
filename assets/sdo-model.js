@@ -1,3 +1,4 @@
+const sdoCatalogLimit=1500;
 const sdoHost='online-edu.mirea.ru';
 const sdoKinds={course:'Курс',assignment:'Задание',lecture:'Лекция',lab:'Лабораторная',
  practice:'Практическая',material:'Материал',lesson:'Урок',quiz:'Тест',forum:'Форум',page:'Страница',folder:'Папка',link:'Учебная ссылка',other:'Прочее'};
@@ -36,7 +37,7 @@ function sameSdoDiscipline(a,b){
 function cleanSdoProfile(value){
  if(!value||typeof value!=='object')return {items:[],attachments:{}};
  const items=[],ids=new Set(),links=new Set();
- for(const input of (Array.isArray(value.items)?value.items:[]).slice(0,500)){
+ for(const input of (Array.isArray(value.items)?value.items:[]).slice(0,sdoCatalogLimit)){
   if(!input||typeof input.id!=='string'||!sdoRecordId.test(input.id)||ids.has(input.id))continue;
   const url=canonicalSdoLink(input.url);
   const document=sdoDocumentId.test(input.id);

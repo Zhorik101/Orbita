@@ -211,14 +211,17 @@ public final class SdoPortalActivity extends Activity {
         String script = """
             (() => {
               const inside = location.pathname === '/course/view.php';
+              const folder = location.pathname === '/mod/folder/view.php';
               const attachments = ['/mod/assign/view.php','/mod/folder/view.php','/mod/page/view.php'].includes(location.pathname);
               if (location.origin !== 'https://online-edu.mirea.ru' ||
                   (!inside && !attachments && !['/my/','/my/courses.php'].includes(location.pathname))) return '';
               const seen = new Set(), links = [];
               const catalog = attachments ? document.querySelector('#region-main, [role="main"], main') : !inside && document.querySelector('[data-region="courses-view"],[data-region="myoverview"],.block_myoverview');
-              for (const anchor of (catalog || document).querySelectorAll('a[href]')) {
+              // Moodle's folder tree can be rendered outside the first main region.
+              for (const anchor of (folder ? document : catalog || document).querySelectorAll('a[href]')) {
                 if (links.length >= 100) break;
-                if (!anchor.getClientRects().length || getComputedStyle(anchor).visibility === 'hidden') continue;
+                const folderTree = folder && anchor.closest('.foldertree, [data-region="foldertree"]');
+                if (!folderTree && (!anchor.getClientRects().length || getComputedStyle(anchor).visibility === 'hidden')) continue;
                 let url;
                 try { url = new URL(anchor.href); } catch { continue; }
                 if (url.origin !== location.origin || url.username || url.password) continue;
@@ -227,7 +230,7 @@ public final class SdoPortalActivity extends Activity {
                 const ids = url.searchParams.getAll('id');
                 if (!file && (attachments || !valid || ids.length !== 1 || !/^[0-9]{1,15}$/.test(ids[0]))) continue;
                 const href = url.origin + url.pathname + (file ? '' : '?id=' + ids[0]);
-                const title = (anchor.innerText || anchor.getAttribute('aria-label') || '').trim().slice(0,180);
+                const title = (anchor.innerText || anchor.getAttribute('aria-label') || (file ? anchor.textContent : '') || '').trim().slice(0,180);
                 if (!title || seen.has(href)) continue;
                 seen.add(href);
                 const section = (anchor.closest('li.section,[data-sectionid]')?.querySelector('h2,h3,h4')?.innerText || '').trim().slice(0,100);
@@ -258,6 +261,7 @@ public final class SdoPortalActivity extends Activity {
                     return;
                 }
                 var payload = new org.json.JSONObject().put("course",inside?course:"").put("title",limited(portal.getTitle(),180)).put("links",links);
+                if (attachments) payload.put("parent",course);
                 if (auto && batch) {
                     if (syncPage == null) {
                         appendSyncResult(payload);
@@ -281,7 +285,6 @@ public final class SdoPortalActivity extends Activity {
                     return;
                 }
                 if (auto) {
-                    if (attachments) payload.put("parent",course);
                     automaticSync=false;
                     setResult(RESULT_OK,new Intent().putExtra("sdoImport",payload.toString()));
                     finish();

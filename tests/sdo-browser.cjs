@@ -169,6 +169,15 @@ const {chromium}=require('playwright');
   assert.equal(await page.evaluate(()=>window.savedDownloadId),downloaded);
   await page.locator('#sdo-create-file-task').click();
   assert(await page.evaluate(id=>state.tasks.some(task=>task.subject==='Химия'&&state.sdo.attachments[task.workId]?.includes(id)),downloaded));
+  await page.evaluate(()=>{
+   document.querySelector('#modal').close();
+   const folder='https://online-edu.mirea.ru/mod/folder/view.php?id=33';
+   state.sdo.items.push({id:'sdo_'+'e'.repeat(32),url:folder,title:'Папка без курса',kind:'folder',courseId:''});
+   window.orbitaSdoPortalImport(JSON.stringify({parent:folder,links:[
+    {url:'https://online-edu.mirea.ru/pluginfile.php/33/mod_folder/content/0/Lecture.pdf',title:'Лекция без курса'}
+   ]}));
+  });
+  assert.match(await page.locator('#modal').innerText(),/Скачать «Лекция без курса»/);
   assert.deepEqual(errors,[]);
   console.log('PASS saved SDO links, manual course structure, task linking, import cancellation, offline bridge, profile and mobile UI');
  }finally{await browser.close()}

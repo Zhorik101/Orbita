@@ -39,7 +39,7 @@ function saveSdo(next){
 }
 function updateSdoItem(item){
  const old=state.sdo.items.find(row=>row.id===item.id);
- if(!old&&state.sdo.items.length>=500){toast('В каталоге может быть до 500 записей.');return false}
+ if(!old&&state.sdo.items.length>=sdoCatalogLimit){toast('Каталог СДО заполнен.');return false}
  return saveSdo({...state.sdo,items:old?state.sdo.items.map(row=>row.id===item.id?item:row):[...state.sdo.items,item]});
 }
 function sdoCourses(){return state.sdo.items.filter(item=>item.kind==='course')}
@@ -86,7 +86,7 @@ window.orbitaSdoPortalImport=json=>{
  const seen=new Map(items.filter(item=>item.url).map(item=>[item.url,item]));
  const now=Date.now();
  function add(url,title,kind,courseId='',section='',assignmentId=''){
-  if(!url||seen.has(url)||items.length>=500||typeof title!=='string'||!title.trim())return null;
+  if(!url||seen.has(url)||items.length>=sdoCatalogLimit||typeof title!=='string'||!title.trim())return null;
   const item={id:sdoNewId('sdo_'),url,title,kind,courseId,section,assignmentId,source:'portal',updated:now,
    discipline:null};
   seen.set(url,item);items.push(item);
@@ -102,27 +102,29 @@ window.orbitaSdoPortalImport=json=>{
    course=add(portalCourse,result.title||'Курс '+new URL(portalCourse).searchParams.get('id'),'course');
   }
   const types={assign:'assignment',quiz:'quiz',forum:'forum',page:'page',folder:'folder',url:'link',lesson:'lesson',resource:'material'};
-  if(course&&!batch){currentCourse=course;refreshedItem=parent}
+  if(!batch){currentCourse=course||currentCourse;refreshedItem=parent||refreshedItem}
   for(const row of result.links.slice(0,100)){
    const url=canonicalSdoLink(row?.url);
    if(!url)continue;
-   if(course){
+   if(course||parent){
+    const courseId=course?.id||parent.courseId;
     const path=new URL(url).pathname;
     const module=path.split('/')[2];
     if(path.startsWith('/pluginfile.php/')){
      const existing=seen.get(url);
-     if(existing&&parent&&!existing.assignmentId&&existing.courseId===course.id){
+     if(existing&&parent&&!existing.assignmentId&&existing.courseId===courseId){
       const updated={...existing,assignmentId:parent.id,section:row.section||parent.section||existing.section};
       items[items.indexOf(existing)]=updated;
       seen.set(url,updated);
-     }else add(url,row.title,'material',course.id,row.section||parent?.section||'',parent?.id||'');
+     }else add(url,row.title,'material',courseId,row.section||parent?.section||'',parent?.id||'');
     }
-    else if(path.startsWith('/mod/'))add(url,row.title,types[module]||'other',course.id,row.section);
+    else if(course&&path.startsWith('/mod/'))add(url,row.title,types[module]||'other',course.id,row.section);
    }else if(!portalCourse&&url.includes('/course/view.php?'))add(url,row.title,'course');
   }
  }
  const added=items.length-state.sdo.items.length;
- if((added||items.some((item,i)=>item!==state.sdo.items[i]))&&!saveSdo({...state.sdo,items}))return;
+ const updated=items.some((item,i)=>i<state.sdo.items.length&&item!==state.sdo.items[i]);
+ if((added||updated)&&!saveSdo({...state.sdo,items}))return;
  if(page==='mini-sdo'){
   activeSdoCourse=currentCourse?.id||'';
   sdoMode='courses';sdoCourseTab='overview';
@@ -130,7 +132,7 @@ window.orbitaSdoPortalImport=json=>{
  }
  if(refreshedItem)showSdoItem(refreshedItem);
  if(batch){toast('Добавлено ссылок: '+added+(payload.skipped?' · Не проверено страниц: '+Number(payload.skipped):''));return}
- toast(added?'Добавлено ссылок: '+added:'Эти ссылки уже есть в каталоге или каталог заполнен.');
+ toast(added?'Добавлено ссылок: '+added:updated?'Файлы привязаны к папке или заданию.':'Эти ссылки уже есть в каталоге или каталог заполнен.');
 };
 function sdoPortalActions(){
  return sdoExternal(sdoPortal+'my/courses.php','Мои курсы в СДО')+' '+
@@ -458,6 +460,7 @@ function showSdoItem(item){
   ${item.kind==='assignment'?`<button type="button" id="sdo-new-task">${linked?'Открыть связанную задачу':'Создать личную задачу'}</button>
    ${window.OrbitaAndroid?.importSdoFiles?'<button type="button" id="sdo-import-assignment">Импортировать вложения задания</button>':''}`:''}</div>
   ${files.length?`<h3>${item.kind==='assignment'?'Материалы задания':'Файлы'}</h3>${files.map(row=>sdoDownloadable(row)?sdoDownloadLink(row,'Скачать «'+row.title+'»'):`<button type="button" class="sdo-item-title" data-assignment-material="${row.id}">${safe(row.title)}</button>`).join('')}`:''}
+  ${item.kind==='folder'&&!files.length?'<p>Список файлов ещё не загружен. Нажми «Обновить файлы».</p>':''}
   ${tasks.length?`<label class="control-field">Личная задача <select id="sdo-task-choice">${tasks.map((task,i)=>
    `<option value="${i}">${safe(task.text)}</option>`).join('')}</select></label>
    <button type="button" id="sdo-link-task">Привязать к задаче</button>`:''}`);
