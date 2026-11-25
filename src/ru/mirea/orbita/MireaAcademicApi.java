@@ -248,87 +248,132 @@ final class MireaAcademicApi {
         return marks;
     }
 
-    record AttendanceEntry(long start, int type) {}
-    record Attendance(int present, int absent, int excused, int total, List<AttendanceEntry> entries) {}
+    record AttendanceEntry(long start, int type, String lessonId) {}
+    record Attendance(int present, int absent, int excused, int total, List<AttendanceEntry> entries,
+                      int journals, boolean partial) {}
+    static final class AttendanceFailure extends IOException {
+        final String code;
+        final int journals;
+        AttendanceFailure(String code, int journals) { this.code = code; this.journals = journals; }
+    }
+    record VisitingLogs(String student, List<String> ids) {}
+    @FunctionalInterface interface JournalReader { byte[] read(String journal) throws IOException; }
 
     Attendance attendance(String discipline) throws IOException {
-        if (discipline == null || !discipline.matches(UUID)) throw new IOException("Неизвестная дисциплина");
-        var journals = fields(request("rtu_tc.attendance.api.VisitingLogService/GetAvailableVisitingLogsOfStudent", new byte[0]));
-        String student = studentId(journals);
-        if (student.isEmpty()) {
-            for (var wrapped : messages(journals, 1)) {
-                student = studentId(wrapped);
-                if (!student.isEmpty()) {
-                    journals = wrapped;
-                    break;
+        if (discipline == null || !discipline.matches(UUID)) throw new AttendanceFailure("discipline", 0);
+        var response = request("rtu_tc.attendance.api.VisitingLogService/GetAvailableVisitingLogsOfStudent", new byte[0]);
+        VisitingLogs logs;
+        try {
+            var data = fields(response);
+            logs = visitingLogs(data);
+            if (logs.ids().isEmpty()) {
+                for (var wrapped : safeMessages(data, 1)) {
+                    var candidate = visitingLogs(wrapped);
+                    if (!candidate.ids().isEmpty()) { logs = candidate; break; }
                 }
             }
+        } catch (IOException error) {
+            throw new AttendanceFailure("format", 0);
         }
-        if (student.isEmpty()) throw new IOException("Не найден журнал студента");
-        var available = new LinkedHashSet<String>();
-        for (var entry : messages(journals, 1)) {
-            String owner = string(entry, 4);
-            String journal = string(message(entry, 1), 1);
-            if ((owner.isEmpty() || owner.equals(student)) && journal.matches(UUID)) available.add(journal);
-        }
-        for (var entry : messages(journals, 2)) {
-            String owner = string(message(entry, 1), 2);
-            String journal = string(message(entry, 2), 1);
-            if (owner.equals(student) && journal.matches(UUID)) available.add(journal);
-        }
-        if (available.isEmpty()) throw new IOException("Не найден журнал студента");
-        List<AttendanceEntry> entries = java.util.Collections.emptyList();
-        IOException lastError = null;
-        boolean answered = false;
-        for (String journal : available) {
+        if (logs.student().isEmpty() || logs.ids().isEmpty()) throw new AttendanceFailure("journals", 0);
+        String student = logs.student();
+        return collectAttendance(logs.ids(), journal -> {
             var query = new ByteArrayOutputStream();
-            query.write(strings(1, java.util.Collections.singletonList(student)));
-            query.write(strings(2, java.util.Collections.singletonList(discipline)));
-            query.write(strings(3, java.util.Collections.singletonList(journal)));
-            try {
-                byte[] payload = request("rtu_tc.attendance.api.AttendanceService/GetStudentAttendancesOfDisciplineInVisitingLog", query.toByteArray());
-                var data = fields(payload);
-                entries = attendanceEntries(data);
-                if (entries.isEmpty()) {
-                    for (var wrapped : messages(data, 1)) {
-                        try {
-                            entries = attendanceEntries(wrapped);
-                        } catch (IOException ignored) {
-                            continue;
-                        }
-                        if (!entries.isEmpty()) break;
-                    }
-                }
-                answered = true;
-                if (!entries.isEmpty()) break;
-            } catch (SignInRequired error) {
-                throw error;
-            } catch (IOException error) {
-                lastError = error;
+            query.write(strings(1, List.of(student)));
+            query.write(strings(2, List.of(discipline)));
+            query.write(strings(3, List.of(journal)));
+            return request("rtu_tc.attendance.api.AttendanceService/GetStudentAttendancesOfDisciplineInVisitingLog", query.toByteArray());
+        });
+    }
+
+    private static VisitingLogs visitingLogs(List<Field> data) throws IOException {
+        String student = studentId(data);
+        var available = new LinkedHashSet<String>();
+        if (!student.isEmpty()) {
+            for (var entry : safeMessages(data, 1)) {
+                String owner = string(entry, 4);
+                String journal = string(safeMessage(entry, 1), 1);
+                if ((owner.isEmpty() || owner.equals(student)) && journal.matches(UUID)) available.add(journal);
+            }
+            for (var entry : safeMessages(data, 2)) {
+                String owner = string(safeMessage(entry, 1), 2);
+                String journal = string(safeMessage(entry, 2), 1);
+                if (owner.equals(student) && journal.matches(UUID)) available.add(journal);
             }
         }
-        if (!answered && lastError != null) throw lastError;
+        return new VisitingLogs(student, List.copyOf(available));
+    }
+
+    static Attendance collectAttendance(List<String> journals, JournalReader reader) throws IOException {
+        var entries = new ArrayList<AttendanceEntry>();
+        var identified = new LinkedHashSet<String>();
+        boolean format = false, network = false;
+        for (String journal : journals) {
+            byte[] payload;
+            try { payload = reader.read(journal); }
+            catch (SignInRequired error) { throw error; }
+            catch (IOException error) { network = true; continue; }
+            try {
+                for (var entry : attendanceEntries(fields(payload))) {
+                    if (entry.lessonId().isEmpty() || identified.add(entry.lessonId() + ":" + entry.type())) entries.add(entry);
+                }
+            } catch (IOException error) { format = true; }
+        }
+        boolean partial = format || network;
+        if (entries.isEmpty() && partial) throw new AttendanceFailure(format ? "format" : "network", journals.size());
+        entries.sort(java.util.Comparator.comparingLong(AttendanceEntry::start).reversed());
         int present = 0, absent = 0, excused = 0;
         for (var entry : entries) {
             if (entry.type() == 3) present++;
             else if (entry.type() == 2) excused++;
             else if (entry.type() == 1) absent++;
         }
-        return new Attendance(present, absent, excused, entries.size(), entries);
+        return new Attendance(present, absent, excused, entries.size(), entries, journals.size(), partial);
     }
 
     static List<AttendanceEntry> attendanceEntries(List<Field> response) throws IOException {
         var entries = new ArrayList<AttendanceEntry>();
-        long now = java.time.Instant.now().getEpochSecond();
-        for (var entry : messages(response, 1)) {
-            var lesson = message(entry, 2);
-            Double seconds = number(message(lesson, 2), 1);
-            if (seconds == null || seconds < 1_500_000_000 || seconds > now) continue;
-            Double type = number(message(entry, 1), 2);
-            entries.add(new AttendanceEntry(seconds.longValue(), type == null ? 0 : type.intValue()));
-        }
-        entries.sort(java.util.Comparator.comparingLong(AttendanceEntry::start).reversed());
+        if (response.isEmpty()) return entries;
+        if (!readAttendanceRows(response, entries, 0)) throw new AttendanceFailure("format", 0);
         return entries;
+    }
+
+    // Field 1 contains attendance rows. Some responses wrap the same message in field 1.
+    private static boolean readAttendanceRows(List<Field> response, List<AttendanceEntry> result, int depth) {
+        if (response.isEmpty() || depth > 2) return false;
+        var rows = safeMessages(response, 1);
+        if (rows.isEmpty() || rows.size() != response.stream().filter(field -> field.number() == 1).count()) return false;
+        long now = java.time.Instant.now().getEpochSecond();
+        for (var row : rows) {
+            var lesson = safeMessage(row, 2);
+            Double seconds = number(safeMessage(lesson, 2), 1);
+            var attendance = safeMessage(row, 1);
+            if (seconds == null) {
+                if (!lesson.isEmpty() || !readAttendanceRows(row, result, depth + 1)) return false;
+                continue;
+            }
+            if (seconds < 1_500_000_000L || seconds > 4_102_444_800L) return false;
+            Double type = number(attendance, 2);
+            if (type == null && row.stream().noneMatch(field -> field.number() == 1)) continue; // Lesson without a submitted mark.
+            if (type == null || (type != 1 && type != 2 && type != 3)) return false;
+            if (seconds > now + 120) continue;
+            String lessonId = string(lesson, 1);
+            result.add(new AttendanceEntry(seconds.longValue(), type.intValue(), lessonId.matches(UUID) ? lessonId : ""));
+        }
+        return true;
+    }
+
+    private static List<List<Field>> safeMessages(List<Field> data, int field) {
+        var result = new ArrayList<List<Field>>();
+        for (var entry : data) if (entry.number() == field && entry.value() instanceof byte[] bytes) {
+            try { result.add(fields(bytes)); } catch (IOException ignored) {}
+        }
+        return result;
+    }
+
+    private static List<Field> safeMessage(List<Field> data, int field) {
+        var candidates = safeMessages(data, field);
+        return candidates.isEmpty() ? List.of() : candidates.get(0);
     }
 
     boolean markAttendance(String token) throws IOException {
@@ -345,12 +390,12 @@ final class MireaAcademicApi {
     }
 
     private static String studentId(List<Field> response) throws IOException {
-        for (var entry : messages(response, 1)) {
+        for (var entry : safeMessages(response, 1)) {
             String id = string(entry, 4);
             if (id.matches(UUID)) return id;
         }
-        for (var entry : messages(response, 2)) {
-            String id = string(message(entry, 1), 2);
+        for (var entry : safeMessages(response, 2)) {
+            String id = string(safeMessage(entry, 1), 2);
             if (id.matches(UUID)) return id;
         }
         return "";

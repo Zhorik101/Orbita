@@ -83,7 +83,8 @@ function editControlEvent(course,original){
   },item.status||'planned')}</select></label>
   <label class="control-field">Заметка <textarea id="control-notes" rows="3" maxlength="2000">${safe(item.notes||'')}</textarea></label>
   <p id="control-form-error" role="status"></p>
-  <button class="primary" type="submit">Сохранить мероприятие</button></form>`);
+  <div class="control-actions"><button class="primary" type="submit">Сохранить мероприятие</button><button type="button" id="control-cancel">Отмена</button></div></form>`);
+ $('#control-cancel').onclick=()=>original?showControlEvent(original.id):$('#modal').close();
  $('#control-form').onsubmit=event=>{
   event.preventDefault();
   const read=id=>$('#control-'+id).value;

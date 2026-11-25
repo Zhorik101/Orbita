@@ -33,3 +33,20 @@
 }
 .control-notes { white-space: pre-wrap; overflow-wrap: anywhere; }
 .control-task-discipline { overflow-wrap: anywhere; }
+
+#mini-discipline-page {
+  padding-bottom: calc(86px + max(var(--system-bottom, 0px), env(safe-area-inset-bottom, 0px)));
+}
+#mini-discipline-page .discipline-panel { padding-block: 9px; }
+#mini-discipline-page .discipline-panel h2 { margin-bottom: 5px; }
+#mini-discipline-page .discipline-panel p { margin-block: 4px; }
+#mini-discipline-page .discipline-panel ul { margin-block: 5px; }
+#mini-discipline-page .discipline-panel li { padding-block: 6px; }
+#modal :is(#control-form, #control-calendar-form) .control-field { margin: 6px 0; gap: 3px; }
+#modal:has(#control-form), #modal:has(#control-calendar-form) {
+  max-height: calc(100dvh - 24px - var(--system-top, 0px) - var(--system-bottom, 0px));
+  overscroll-behavior: contain;
+  scroll-padding-block: 14px;
+}
+#modal .control-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+#modal .control-actions button { min-height: 44px; }

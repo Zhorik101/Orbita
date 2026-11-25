@@ -50,8 +50,8 @@ function paintDiscipline(){
  const latestTerm=Math.max(0,...courses.map(course=>course.term||0));
  const score=courses.find(course=>course.term===(term??latestTerm)
   &&(id?course.id===id:subjectKey(course.name)===subjectKey(name)));
- requestCourseAttendance(score?.id);
- const attendance=score?.id?attendanceByCourse.get(score.id):null;
+ requestCourseAttendance(score?.id,score?.term);
+ const attendance=score?.id?attendanceByCourse.get(attendanceCourseKey(score.id,score.term)):null;
  const activeTerm=!term||!latestTerm||term===latestTerm;
  const group=state.officialGroup;
  const scheduleCache=officialCache[calendarKey(group)];
@@ -69,13 +69,14 @@ function paintDiscipline(){
  const gradesStatus=[courseGradesLoading?'Обновляем баллы…':courseGradeRefreshError?'Не удалось обновить · показаны сохранённые баллы':'',
   score?window.disciplineUpdated(result.updated):''].filter(Boolean).join(' · ');
  const attendanceStatus=attendance?.error==='login'?'Войди в МИРЭА для просмотра отметок'
+  :attendance?.error==='format'?'Не удалось разобрать журнал МИРЭА'
   :attendance?.error?'Не удалось загрузить посещаемость'
-  :attendance?attendance.total?`Присутствий: ${attendance.present} · Пропусков: ${attendance.absent} · Всего: ${attendance.total}`:'Отметок пока нет'
+  :attendance?attendance.total?`Присутствий: ${attendance.present} · Пропусков: ${attendance.absent} · Всего: ${attendance.total}${attendance.partial?' · часть журналов':''}`:'Отметок пока нет'
   :score?.id&&window.OrbitaAndroid?.loadMireaAttendance?'Загружаем посещаемость…':'Посещаемость недоступна';
  const scheduleStatus=!activeTerm?'Для прошедшего семестра предстоящие пары не показываются.'
   :!group?'Сначала выбери свою группу.':disciplineScheduleRequest||(!scheduleCache?'Расписание ещё не загружено.':'Пар по этому предмету на ближайшие 14 дней нет.');
  const slotRows=upcoming.map(({date,lesson},index)=>`<li><button type="button" data-discipline-lesson="${index}">${safe(date.toLocaleDateString('ru',{day:'numeric',month:'long'}))} · ${safe(lesson.start)}</button>
-  <small>${[lesson.type,lesson.room,lesson.campus].filter(Boolean).map(safe).join(' · ')}</small></li>`).join('');
+  <small>${[lesson.type,lesson.subgroup?'Подгруппа '+lesson.subgroup:'',lesson.room,lesson.campus,lesson.teacher].filter(Boolean).map(safe).join(' · ')}</small></li>`).join('');
  $('#discipline-overview').innerHTML=
   disciplinePanel('Баллы БРС',`<p role="status">${safe(gradesStatus)}</p>
    ${score?courseScoreHtml(score):`<p>${courseGradesLoading?'Загружаем баллы…':result?.error==='login'?'Войди в МИРЭА для просмотра баллов.':result?.error?'Не удалось загрузить баллы.':'Баллы по этому предмету недоступны.'}</p>`}
@@ -98,7 +99,7 @@ function paintDiscipline(){
  if(scoreHistory)scoreHistory.remove();
  const actions={
   grades:()=>result?.error==='login'?openPulseGrades(true):loadCourseGrades(),
-  attendance:()=>showCourseAttendance(score.id,name),
+  attendance:()=>showCourseAttendance(score.id,name,score.term),
   schedule:async()=>{
    const selection=openedDiscipline;
    disciplineScheduleRequest='Обновляем расписание…';

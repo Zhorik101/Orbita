@@ -334,7 +334,9 @@ public class MainActivity extends Activity {
                 try {
                     String cookie = android.webkit.CookieManager.getInstance().getCookie(MireaAcademicApi.ORIGIN + "/");
                     if (cookie == null || !PulseGradesActivity.hasSession(cookie)) throw new MireaAcademicApi.SignInRequired();
+                    String session = mireaSessionKey(cookie);
                     var marks = new MireaAcademicApi(cookie).dailyMarks(java.time.LocalDate.parse(day));
+                    if (!session.equals(currentMireaSessionKey())) throw new MireaAcademicApi.SignInRequired();
                     var rows = new org.json.JSONArray();
                     for (var mark : marks) {
                         rows.put(new JSONObject().put("subject", mark.subject()).put("start", mark.start()).put("type", mark.type()));
@@ -354,24 +356,37 @@ public class MainActivity extends Activity {
         @JavascriptInterface public void loadMireaAttendance(int requestId, String discipline) {
             scheduleNetwork.execute(() -> {
                 JSONObject result = new JSONObject();
+                String session = currentMireaSessionKey();
+                int journals = 0, parsed = 0;
+                String code = "ok";
                 try {
                     String cookie = android.webkit.CookieManager.getInstance().getCookie(MireaAcademicApi.ORIGIN + "/");
-                    if (cookie == null || !PulseGradesActivity.hasSession(cookie)) throw new MireaAcademicApi.SignInRequired();
+                    if (session.isEmpty() || !session.equals(mireaSessionKey(cookie))) throw new MireaAcademicApi.SignInRequired();
                     var attendance = new MireaAcademicApi(cookie).attendance(discipline);
+                    journals = attendance.journals();
+                    parsed = attendance.total();
+                    if (!session.equals(currentMireaSessionKey())) throw new MireaAcademicApi.SignInRequired();
                     var rows = new org.json.JSONArray();
                     for (var entry : attendance.entries()) {
                         rows.put(new JSONObject().put("start", entry.start()).put("type", entry.type()));
                     }
+                    code = attendance.partial() ? "partial" : attendance.total() == 0 ? "empty" : "ok";
                     result.put("entries", rows).put("present", attendance.present()).put("absent", attendance.absent())
-                        .put("excused", attendance.excused()).put("total", attendance.total());
+                        .put("excused", attendance.excused()).put("total", attendance.total()).put("partial", attendance.partial());
                 } catch (Exception error) {
-                    try {
-                        result.put("error", error instanceof MireaAcademicApi.SignInRequired ? "login" : "network");
-                    } catch (org.json.JSONException ignored) {}
+                    if (error instanceof MireaAcademicApi.AttendanceFailure failure) {
+                        code = failure.code;
+                        journals = failure.journals;
+                    } else code = error instanceof MireaAcademicApi.SignInRequired ? "login" : "network";
+                    try { result.put("error", code); } catch (org.json.JSONException ignored) {}
                 }
+                android.util.Log.i("OrbitaAttendance", "request=" + requestId + " journals=" + journals
+                    + " parsed=" + parsed + " code=" + code);
                 String callback = "window.orbitaMireaAttendance?.(" + requestId + "," + result + ")";
                 runOnUiThread(() -> {
-                    if (web != null && !isFinishing() && !isDestroyed()) web.evaluateJavascript(callback, null);
+                    if (web == null || isFinishing() || isDestroyed()) return;
+                    if (session.equals(currentMireaSessionKey())) web.evaluateJavascript(callback, null);
+                    else web.evaluateJavascript("window.orbitaRefreshMireaGrades?.()", null);
                 });
             });
         }
