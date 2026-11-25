@@ -43,7 +43,7 @@ function localBackupData(source){
   .filter(item=>required.some(key=>typeof item[key]==='string'&&item[key].trim())):[];
  const data={
   tasks:list(source.tasks,backupTaskFields,['text']),
-  ...(typeof cleanDebtMarks==='function'?{debtMarks:cleanDebtMarks(source.debtMarks)}:{}),
+  ...(typeof cleanDebtMarks==='function'?{debtMarks:cleanDebtMarks(source.debtMarks),academicRetakes:cleanAcademicRetakes(source.academicRetakes)}:{}),
   ...(typeof controlEventList==='function'?{controlEvents:controlEventList(source.controlEvents)}:{}),
   notebooks:list(source.notebooks,backupNoteFields,['body','title']),
   notes:isOrbitaRecord(source.notes)?Object.fromEntries(Object.entries(source.notes).filter(([,v])=>typeof v==='string')):{}
@@ -92,7 +92,7 @@ async function parseProfileBackup(json){
   throw new Error('В файле нет профиля Орбиты.');
  if(typeof data.schemaVersion==='number'&&data.schemaVersion>orbitaSchemaVersion)
   throw new Error('Профиль создан в более новой версии Орбиты.');
- for(const key of ['tasks','notebooks','notes','controlEvents','debtMarks']){
+ for(const key of ['tasks','notebooks','notes','controlEvents','debtMarks','academicRetakes']){
   if(key in data&&!(['notes','debtMarks'].includes(key)?isOrbitaRecord(data[key]):Array.isArray(data[key])))
    throw new Error('Один из разделов файла повреждён.');
  }
@@ -116,7 +116,7 @@ function mergeProfileBackup(current, data, settings){
  };
  const taskText=task=>JSON.stringify(['text','subject','dueISO','due','comment'].map(key=>task[key]||''));
  const noteText=note=>JSON.stringify([note.title||'',note.body||'']);
- const {tasks,notebooks,notes,homeNote,controlEvents,debtMarks,...preferences}=data;
+ const {tasks,notebooks,notes,homeNote,controlEvents,debtMarks,academicRetakes,...preferences}=data;
  const mergedTasks=addUnique(current.tasks,tasks,'workId',taskText);
  const mergedEvents=typeof controlEventList==='function'?controlEventList([
   ...controlEventList(current.controlEvents),
@@ -139,7 +139,8 @@ function mergeProfileBackup(current, data, settings){
  return {...current,...(settings?preferences:{}),
   tasks:mergedTasks,
   ...(mergedEvents?{controlEvents:mergedEvents}:{}),
-  ...(restoredMarks?{debtMarks:{...restoredMarks,...cleanDebtMarks(current.debtMarks)}}:{}),
+  ...(restoredMarks?{debtMarks:{...restoredMarks,...cleanDebtMarks(current.debtMarks)},
+   academicRetakes:cleanAcademicRetakes([...(current.academicRetakes||[]),...(academicRetakes||[])])}:{}),
   notebooks:addUnique(current.notebooks,notebooks,'id',noteText),
   notes:{...notes,...current.notes},
   homeNote:current.homeNote||homeNote||''

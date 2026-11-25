@@ -264,7 +264,10 @@ final class MireaAcademicApi {
     record VisitingLogs(String student, List<String> ids) {}
     @FunctionalInterface interface JournalReader { byte[] read(String journal) throws IOException; }
 
-    Attendance attendance(String discipline) throws IOException {
+    record AttendanceSummary(int present, int absent, int excused, int total) {}
+    record AttendanceView(Attendance details, List<AttendanceSummary> summaries, int journals, String error) {}
+
+    AttendanceView attendance(String discipline) throws IOException {
         if (discipline == null || !discipline.matches(UUID)) throw new AttendanceFailure("discipline", 0, "input");
         byte[] response;
         try { response = request("rtu_tc.attendance.api.VisitingLogService/GetAvailableVisitingLogsOfStudent", new byte[0]); }
@@ -285,13 +288,62 @@ final class MireaAcademicApi {
         }
         if (logs.student().isEmpty() || logs.ids().isEmpty()) throw new AttendanceFailure("journals", 0, "journal-list");
         String student = logs.student();
-        return collectAttendance(logs.ids(), journal -> {
-            var query = new ByteArrayOutputStream();
-            query.write(strings(1, List.of(student)));
-            query.write(strings(2, List.of(discipline)));
-            query.write(strings(3, List.of(journal)));
-            return request("rtu_tc.attendance.api.AttendanceService/GetStudentAttendancesOfDisciplineInVisitingLog", query.toByteArray());
-        });
+        var ids = logs.ids();
+        Attendance details = null;
+        String error = "";
+        try {
+            details = collectAttendance(ids, journal -> request(
+                "rtu_tc.attendance.api.AttendanceService/GetStudentAttendancesOfDisciplineInVisitingLog",
+                attendanceQuery(student, discipline, journal)));
+        } catch (AttendanceFailure failure) {
+            error = failure.code;
+        }
+        var summaries = new ArrayList<AttendanceSummary>();
+        if (details == null || details.total() == 0) {
+            for (String journal : ids) {
+                try {
+                    var payload = request("rtu_tc.attendance.api.AttendanceService/GetStudentAttendancesPrimaryInfoOfDiscipline",
+                        attendanceQuery(student, discipline, journal));
+                    var summary = attendanceSummary(fields(payload));
+                    if (summary != null) summaries.add(summary);
+                } catch (SignInRequired failure) { throw failure; }
+                catch (IOException ignored) {}
+            }
+        }
+        return new AttendanceView(details, summaries, ids.size(), error);
+    }
+
+    private static byte[] attendanceQuery(String student, String discipline, String journal) throws IOException {
+        var query = new ByteArrayOutputStream();
+        query.write(strings(1, List.of(student)));
+        query.write(strings(2, List.of(discipline)));
+        query.write(strings(3, List.of(journal)));
+        return query.toByteArray();
+    }
+
+    static AttendanceSummary attendanceSummary(List<Field> data) {
+        var direct = readAttendanceSummary(data);
+        if (direct != null) return direct;
+        for (var wrapped : safeMessages(data, 1)) {
+            var summary = readAttendanceSummary(wrapped);
+            if (summary != null) return summary;
+        }
+        return null;
+    }
+
+    private static AttendanceSummary readAttendanceSummary(List<Field> data) {
+        var stats = safeMessage(data, 2);
+        int[] counts = {0, 0, 0, 0, 0};
+        for (var field : stats) {
+            int key = field.number();
+            if (key >= 1 && key <= 4 && field.value() instanceof Long value) {
+                if (value < 0 || value > 100000) return null;
+                counts[key] = value.intValue();
+            }
+        }
+        int marked = counts[2] + counts[3] + counts[4];
+        if (marked == 0 || marked > counts[1]) return null;
+        return new AttendanceSummary(counts[2], counts[4], counts[3], counts[1]);
     }
 
     private static VisitingLogs visitingLogs(List<Field> data) throws IOException {

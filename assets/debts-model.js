@@ -37,3 +37,15 @@ function collectDebts(tasks,events,marks,today,now){
  for(const task of tasks)if(task.workId&&!seen.has(task.workId))create(task,null);
  return result;
 }
+
+function cleanAcademicRetakes(value){
+ if(!Array.isArray(value))return [];
+ const seen=new Set();
+ return value.flatMap(item=>{
+  if(!item||typeof item.id!=='string'||!/^retake_[a-f0-9]{32}$/.test(item.id)||seen.has(item.id)
+     ||typeof item.subject!=='string'||!item.subject.trim())return [];
+  seen.add(item.id);
+  return [{id:item.id,subject:item.subject.trim().slice(0,160),date:controlDateValid(item.date)?item.date:'',
+   kind:item.kind==='exam'?'exam':'credit',done:item.done===true}];
+ });
+}

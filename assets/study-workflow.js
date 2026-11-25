@@ -214,8 +214,8 @@ function refreshCourseGradesIfNeeded(){
  }
 }
 const mireaReplyTimeouts=new Map();
-function requestMireaReply(key, invoke, finish){
- const timeout=setTimeout(()=>finish({error:'timeout'}),25000);
+function requestMireaReply(key, invoke, finish, wait=25000){
+ const timeout=setTimeout(()=>finish({error:'timeout'}),wait);
  mireaReplyTimeouts.set(key,timeout);
  try{invoke()}catch{finish({error:'network'})}
 }
@@ -274,7 +274,7 @@ function requestCourseAttendance(id){
  const request=++attendanceRequestId;
  attendanceRequests.set(request,id);
  requestMireaReply('course:'+request,()=>window.OrbitaAndroid.loadMireaAttendance(request,id),
-  result=>window.orbitaMireaAttendance(request,result));
+  result=>window.orbitaMireaAttendance(request,result),55000);
 }
 window.orbitaMireaAttendance=(request,result)=>{
  const id=attendanceRequests.get(request);
@@ -282,7 +282,9 @@ window.orbitaMireaAttendance=(request,result)=>{
  attendanceRequests.delete(request);
  const valid=result&&!result.error&&Array.isArray(result.entries)&&Number.isInteger(result.total)
   &&result.total===result.entries.length;
- attendanceByCourse.set(id,valid?{...result,updated:Date.now()}:{error:result?.error||'format'});
+ const summaries=Array.isArray(result?.summaries)?result.summaries:[];
+ attendanceByCourse.set(id,summaries.length?{summaries,updated:Date.now()}
+  :valid?{...result,updated:Date.now()}:{error:result?.error||'format'});
  if(page==='mini-discipline')window.paintDiscipline?.();
  if(page==='mini-courses'&&[...$$('[data-sport-attendance]')].some(node=>node.dataset.sportAttendance===id))paintCourseTools();
  if(attendanceDialog?.id===id&&$('#course-attendance-content')&&$('#modal').open)paintAttendanceDialog();
@@ -297,6 +299,9 @@ function paintAttendanceDialog(){
   const message={login:'Войди в МИРЭА, чтобы посмотреть посещения.',timeout:'МИРЭА не ответила вовремя.',
    format:'Не удалось разобрать журнал МИРЭА.',journals:'МИРЭА не вернула доступные журналы.'};
   box.innerHTML='<p>'+(message[info.error]||'Не удалось загрузить посещения.')+'</p>'+refresh;
+ }else if(info.summaries?.length){
+  box.innerHTML=scope+'<p>Пульс вернул сводку. Подробные отметки по датам недоступны.</p>'+refresh+
+   info.summaries.map((row,index)=>`<p>Журнал ${index+1} · Присутствий: ${row.present} · Пропусков: ${row.absent} · По уважительной причине: ${row.excused} · Всего занятий: ${row.total}</p>`).join('');
  }else if(!info.total){
   box.innerHTML=scope+'<p>МИРЭА не вернула отметок по предмету в доступных журналах.</p>'+refresh;
  }else{
@@ -425,7 +430,7 @@ function sportAttendanceHtml(score){
  if(!score.id||!window.OrbitaAndroid?.loadMireaAttendance)return '';
  const attendance=attendanceByCourse.get(score.id);
  const summary=score.lessons>0?`Присутствовал: ${score.present} из ${score.lessons}`:'';
- const text=summary||(!attendance?'Загружаем посещения…':attendance.error?'Посещения недоступны':attendance.total
+ const text=summary||(!attendance?'Загружаем посещения…':attendance.error?'Посещения недоступны':attendance.summaries?.length?'Доступна сводка Пульса':attendance.total
   ?`Присутствовал: ${attendance.present} из ${attendance.total} · Пропусков: ${attendance.absent} · Все доступные журналы`:'Отметок пока нет');
  return `<p class="course-sport-attendance" data-sport-attendance="${safe(score.id)}">${text}</p>`;
 }

@@ -34,6 +34,10 @@ public class MireaAttendanceTest {
         check(MireaAcademicApi.collectAttendance(List.of("a"), id -> wrapped).absent() == 1);
         byte[] unmarked = message(1, message(2, message(2, number(1, START))));
         check(MireaAcademicApi.collectAttendance(List.of("a"), id -> unmarked).total() == 0);
+        byte[] stats = message(2, concat(number(1, 18), number(2, 9), number(3, 2), number(4, 5)));
+        var summary = MireaAcademicApi.attendanceSummary(MireaAcademicApi.fields(message(1, stats)));
+        check(summary.present() == 9 && summary.absent() == 5 && summary.total() == 18);
+        check(MireaAcademicApi.attendanceSummary(MireaAcademicApi.fields(message(2, number(1, 3)))) == null);
         System.out.println("PASS attendance journals, nesting, confirmed empty, parse/network failures and retry");
     }
 

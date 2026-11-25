@@ -63,10 +63,15 @@ const {chromium}=require('playwright');
   await page.evaluate(()=>window.orbitaMireaAttendance(window.attendanceRequestsSeen.at(-1).request,
    {present:1,absent:0,total:1,partial:true,entries:[{start:1764057600,type:3}]}));
   assert.match(await page.locator('#course-attendance-content').innerText(),/часть журналов/);
+  await page.locator('#retry-course-attendance').click();
+  await page.evaluate(()=>window.orbitaMireaAttendance(window.attendanceRequestsSeen.at(-1).request,
+   {error:'format',summaries:[{present:12,absent:1,excused:1,total:16}]}));
+  assert.match(await page.locator('#course-attendance-content').innerText(),/Пульс вернул сводку/);
+  assert.match(await page.locator('#course-attendance-content').innerText(),/Присутствий: 12/);
   await page.evaluate(()=>document.querySelector('#modal').close());
   await page.evaluate(()=>window.openDiscipline('Информационные технологии в химии',{id:'chem',term:2}));
-  assert.match(await detail.innerText(),/Без разбивки по семестрам/);
-  assert.equal(await page.evaluate(()=>window.attendanceRequestsSeen.length),3);
+  assert.match(await detail.innerText(),/Доступна сводка Пульса/);
+  assert.equal(await page.evaluate(()=>window.attendanceRequestsSeen.length),4);
   await page.evaluate(()=>window.openDiscipline('Информационные технологии в химии',{id:'chem',term:3}));
   assert.match(await detail.innerText(),/А-308/);
   assert.match(await detail.innerText(),/Старый отчёт/);

@@ -3,9 +3,9 @@ const academicDebtsPage=createMiniPage('mini-academic-debts',`
  <div class="mini-heading"><h1>Долги</h1><p>Академические задолженности РТУ МИРЭА</p></div>
  <section class="course-discipline discipline-panel">
   <h2>Официальные данные о задолженностях недоступны</h2>
-  <p>Орбита не может подтвердить, есть ли задолженности. Результаты аттестации и информацию о пересдачах можно уточнить в личном кабинете студента.</p>
+  <p>Сверь экзамены и зачёты в кабинете МИРЭА. Пересдачи из ведомости можно добавить сюда вручную.</p>
   <a class="academic-debts-portal" href="https://lk.mirea.ru/auth.php">Личный кабинет МИРЭА ↗</a>
- </section>`);
+ </section><div id="academic-retakes"></div>`);
 $('#academic-debts-back').onclick=()=>showPage('miniapps');
 const debtsPage=createMiniPage('mini-debts',`
  <button type="button" class="mini-back" id="debts-back">← Назад</button>
@@ -18,7 +18,7 @@ const debtSorters={date:debtDateOrder,subject:debtSubjectOrder,kind:(a,b)=>a.kin
 
 function debtRows(){
  const now=new Date();
- return collectDebts(state.tasks,state.controlEvents,state.debtMarks,moscowParts(now).date,+now);
+ return collectDebts(state.tasks,[],state.debtMarks,moscowParts(now).date,+now);
 }
 function debtMatchesCourse(row,course){
  const event=row.event;
@@ -175,7 +175,7 @@ renderMiniHub=function(){
  hubBeforeDebts();
  const entries=[
   ['mini-academic-debts','Долги','Академические задолженности МИРЭА',()=>showPage('mini-academic-debts')],
-  ['mini-debts','Незавершённые работы','Личные задачи, МТК и пометки',()=>openDebts()]
+  ['mini-debts','Незавершённые работы','Личные задачи и пометки',()=>openDebts()]
  ];
  for(const [destination,title,caption,open] of entries){
   const tile=document.createElement('button');
@@ -191,6 +191,7 @@ const pageBeforeDebts=showPage;
 showPage=function(destination){
  pageBeforeDebts(destination);
  if(destination==='mini-debts')paintDebts();
+ if(destination==='mini-academic-debts')paintAcademicRetakes();
 };
 const backBeforeDebts=handleAppBack;
 handleAppBack=function(){
@@ -199,3 +200,43 @@ handleAppBack=function(){
  return backBeforeDebts();
 };
 $('#modal').addEventListener('close',paintDebts);
+
+function paintAcademicRetakes(){
+ const root=$('#academic-retakes');
+ const rows=[...state.academicRetakes].sort((a,b)=>Number(a.done)-Number(b.done)
+  ||(a.date||'9999').localeCompare(b.date||'9999'));
+ const items=rows.map(item=>`<li><button type="button" data-retake="${item.id}">${safe(item.subject)}</button>
+  <small>${item.kind==='exam'?'Экзамен':'Зачёт'} · ${item.date?safe(debtDateLabel(item.date)):'Дата уточняется'} · ${item.done?'Закрыто':'К пересдаче'}</small></li>`).join('');
+ root.innerHTML=disciplinePanel('Мои пересдачи',`<p>Записи из ведомости, внесённые вручную.</p>
+  <button type="button" id="add-retake">+ Пересдача</button>${items?`<ul>${items}</ul>`:''}`);
+ $('#add-retake').onclick=()=>editAcademicRetake();
+ root.querySelectorAll('[data-retake]').forEach(button=>button.onclick=()=>
+  editAcademicRetake(rows.find(item=>item.id===button.dataset.retake)));
+}
+function commitAcademicRetakes(records){
+ const previous=state.academicRetakes;
+ state.academicRetakes=records;
+ if(!save()){state.academicRetakes=previous;return}
+ $('#modal').close();
+ paintAcademicRetakes();
+}
+function editAcademicRetake(item){
+ modal(`<h2>${item?'Пересдача':'Добавить пересдачу'}</h2>
+ <form id="retake-form">
+ <label class="control-field">Дисциплина <input id="retake-subject" maxlength="160" required value="${safe(item?.subject||'')}"></label>
+ <label class="control-field">Вид контроля <select id="retake-kind">${controlOptions({exam:'Экзамен',credit:'Зачёт'},item?.kind||'exam')}</select></label>
+ <label class="control-field">Дата <input id="retake-date" type="date" value="${safe(item?.date||'')}"></label>
+ <label class="setting-row"><span>Задолженность закрыта</span><input type="checkbox" id="retake-done"${item?.done?' checked':''}></label>
+ <button type="submit" class="primary">Сохранить</button>
+ ${item?'<button type="button" id="delete-retake">Удалить запись</button>':''}
+ </form>`);
+ $('#retake-form').onsubmit=event=>{
+  event.preventDefault();
+  const subject=$('#retake-subject').value.trim();
+  if(!subject){$('#retake-subject').focus();return}
+  const [entry]=cleanAcademicRetakes([{id:item?.id||'retake_'+newControlId().slice(4),subject,
+   date:$('#retake-date').value,kind:$('#retake-kind').value,done:$('#retake-done').checked}]);
+  commitAcademicRetakes(item?state.academicRetakes.map(row=>row.id===item.id?entry:row):[...state.academicRetakes,entry]);
+ };
+ if(item)$('#delete-retake').onclick=()=>commitAcademicRetakes(state.academicRetakes.filter(row=>row.id!==item.id));
+}

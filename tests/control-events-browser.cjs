@@ -16,70 +16,23 @@ const {chromium}=require('playwright');
    return url.hostname==='orbita.local'&&fs.existsSync(file)?route.fulfill({path:file}):route.abort();
   });
   await page.goto('https://orbita.local/index.html');
-  await page.evaluate(()=>{
+  const restored=await page.evaluate(async()=>{
    document.querySelectorAll('dialog[open]').forEach(dialog=>dialog.close());
    const course={id:'chem',name:'Химия',term:3,total:24,maximum:100,categories:[]};
    state.tasks=[{workId:'existing',subject:'Химия',text:'Готовая задача',due:'Без срока',done:false}];
-   state.controlEvents=[];
-   window.savedCalendar=[];
-   window.OrbitaAndroid={
-    write:()=>true,
-    calendarTargets:()=>JSON.stringify({permission:true,calendars:[{id:7,name:'Личный',account:'test@example.org',accountType:'com.google'}]}),
-    saveControlCalendar:(request,payload)=>{
-     window.savedCalendar.push(JSON.parse(payload));
-     window.orbitaControlCalendarResult(request,{ok:true});
-    }
-   };
+   state.controlEvents=[cleanControlEvent({id:'mtk_'+'1'.repeat(32),title:'Старое МТК',courseId:'chem',
+    courseName:'Химия',term:3,taskId:'existing'})];
    courseGradeResult={updated:Date.now(),schema:2,courses:[course]};
-   showPage('mini-courses');
+   window.openDiscipline(course.name,course);
+   const data=await parseProfileBackup(await createProfileBackup(state));
+   return {taskId:data.controlEvents[0].taskId,taskCount:data.tasks.length};
   });
-  await page.getByRole('button',{name:'Химия',exact:true}).click();
-  await page.getByRole('button',{name:'+ Мероприятие'}).click();
-  await page.locator('#control-title').fill('Контрольная 1');
-  await page.locator('#control-type').selectOption('exam');
-  await page.locator('#control-earned').fill('9');
-  await page.locator('#control-maximum').fill('8');
-  await page.getByRole('button',{name:'Сохранить мероприятие'}).click();
-  assert.match(await page.locator('#control-form-error').innerText(),/превышают максимум/);
-  await page.locator('#control-maximum').fill('10');
-  await page.getByRole('button',{name:'Сохранить мероприятие'}).click();
-  assert.match(await page.locator('#modal').innerText(),/Добавлено вручную/);
-  await page.locator('#control-task').click();
-  await page.locator('#control-task').click();
-  assert.equal(await page.evaluate(()=>state.tasks.length),2);
-  assert.match(await page.locator('#save-work-template').getAttribute('data-work-id'),/^work_/);
-  await page.getByRole('button',{name:/Перейти к дисциплине/}).click();
-  await page.locator('[data-control-event]').click();
-  await page.locator('#control-link').click();
-  await page.locator('#control-task-choice').selectOption('0');
-  await page.locator('#control-task-confirm').click();
-  assert.equal(await page.evaluate(()=>state.controlEvents[0].taskId),'existing');
-  await page.locator('#control-edit').click();
-  await page.locator('#control-title').fill('Итоговая контрольная');
-  await page.locator('#control-status').selectOption('review');
-  await page.getByRole('button',{name:'Сохранить мероприятие'}).click();
-  await page.locator('#control-calendar').click();
-  assert.equal(await page.locator('#control-calendar-date').inputValue(),'');
-  await page.locator('#control-calendar-date').fill('2026-12-12');
-  await page.locator('#control-calendar-time').fill('14:00');
-  await page.getByRole('button',{name:'Сохранить в календаре'}).click();
-  await page.locator('#control-calendar-title').fill('Изменённое событие');
-  await page.getByRole('button',{name:'Сохранить в календаре'}).click();
-  const calendar=await page.evaluate(()=>window.savedCalendar);
-  assert.equal(calendar.length,2);
-  assert.equal(calendar[0].id,calendar[1].id);
-  assert.equal(calendar[1].title,'Изменённое событие');
-  assert.equal(calendar[1].start,Date.parse('2026-12-12T11:00:00Z'));
-  await page.evaluate(()=>document.querySelector('#modal').close());
-  await page.locator('#control-status-filter').selectOption('overdue');
-  assert.equal(await page.locator('[data-control-event]').count(),0);
-  await page.locator('#control-status-filter').selectOption('review');
-  await page.locator('[data-control-event]').click();
-  await page.locator('#control-delete').click();
-  await page.locator('#control-confirm-delete').click();
-  assert.equal(await page.evaluate(()=>state.controlEvents.length),0);
-  assert.equal(await page.evaluate(()=>state.tasks.length),2);
+  await page.locator('#mini-discipline-page').getByRole('heading',{name:'Химия'}).waitFor();
+  assert.equal(await page.getByRole('button',{name:'+ Мероприятие'}).count(),0);
+  assert.doesNotMatch(await page.locator('#discipline-overview').innerText(),/Старое МТК/);
+  assert.match(await page.locator('#discipline-overview').innerText(),/Готовая задача/);
+  assert.deepEqual(restored,{taskId:'existing',taskCount:1});
   assert.deepEqual(errors,[]);
-  console.log('PASS manual control events, task creation and linking, calendar identity, filters and deletion');
+  console.log('PASS legacy control events stay in backup and the discipline only shows the task');
  }finally{await browser.close()}
 })().catch(error=>{console.error(error);process.exitCode=1});

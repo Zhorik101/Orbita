@@ -29,6 +29,7 @@ function recoverySnapshot(original,profile){
   notebooks:project(profile.notebooks,['id','title','body','updated']),
   controlEvents:profile.controlEvents||[],
   debtMarks:profile.debtMarks||{},
+  academicRetakes:profile.academicRetakes||[],
   group:profile.group,theme:profile.theme,homeNote:typeof profile.homeNote==='string'?profile.homeNote:'',
   homeLayout:project(Array.isArray(profile.homeLayout)?profile.homeLayout.filter(isOrbitaRecord):[],['id','size','detail','height'])
  };
@@ -54,6 +55,7 @@ function normalizeOrbitaProfile(original){
  profile.notebooks=collection('notebooks',original.notebooks);
  if(typeof controlEventList==='function')profile.controlEvents=controlEventList(collection('controlEvents',original.controlEvents));
  if(typeof cleanDebtMarks==='function')profile.debtMarks=cleanDebtMarks(original.debtMarks);
+ if(typeof cleanAcademicRetakes==='function')profile.academicRetakes=cleanAcademicRetakes(original.academicRetakes);
  if(original.notes!==undefined&&!isOrbitaRecord(original.notes))repaired.push('notes');
  profile.notes=isOrbitaRecord(original.notes)?original.notes:{};
  if(typeof profile.group!=='string'||profile.group.length>32){profile.group='';repaired.push('group')}

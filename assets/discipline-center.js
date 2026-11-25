@@ -71,6 +71,7 @@ function paintDiscipline(){
  const attendanceStatus=attendance?.error==='login'?'Войди в МИРЭА для просмотра отметок'
   :attendance?.error==='format'?'Не удалось разобрать журнал МИРЭА'
   :attendance?.error?'Не удалось загрузить посещаемость'
+  :attendance?.summaries?.length?'Доступна сводка Пульса · по журналам'
   :attendance?attendance.total?`Присутствий: ${attendance.present} · Пропусков: ${attendance.absent} · Всего: ${attendance.total}${attendance.partial?' · часть журналов':''} · Без разбивки по семестрам`:'Отметок пока нет'
   :score?.id&&window.OrbitaAndroid?.loadMireaAttendance?'Загружаем посещаемость…':'Посещаемость недоступна';
  const scheduleStatus=!activeTerm?'Для прошедшего семестра предстоящие пары не показываются.'
@@ -88,7 +89,6 @@ function paintDiscipline(){
    <p>${safe(window.disciplineUpdated(scheduleCache?.updated))}</p>
    ${activeTerm&&group?`<button type="button" data-discipline-action="schedule"${disciplineScheduleRequest==='Обновляем расписание…'?' disabled':''}>Обновить расписание</button>`:''}`)
   +(window.disciplineDebtsPanel?.({name,id:score?.id||id,term:score?.term||term})||'')
-  +(window.controlEventsPanel?.({name,id:score?.id||id,term:score?.term||term})||'')
   +disciplinePanel('Личные задания',`<button type="button" data-discipline-action="add">+ Работа</button>
    ${pending.length?`<ul>${disciplineTaskList(pending)}</ul>`:'<p>Открытых заданий нет.</p>'}`)
   +disciplinePanel('Командные задания','<p>В общих работах предмет хранится в описании. Открой команду, чтобы посмотреть список.</p><button type="button" data-discipline-action="teams">Открыть команды</button>')
@@ -96,7 +96,6 @@ function paintDiscipline(){
   +disciplinePanel('История результатов',`<p>Выполненные личные задания</p>${completed.length?`<ul>${disciplineTaskList(completed,true)}</ul>`:'<p>Выполненных заданий пока нет.</p>'}<p>В БРС доступна текущая сводка баллов.</p>`);
  const overview=$('#discipline-overview');
  window.bindDisciplineDebts?.(overview,{name,id:score?.id||id,term:score?.term||term});
- window.bindControlEvents?.(overview,{name,id:score?.id||id,term:score?.term||term});
  const scoreHistory=overview.querySelector('.course-attendance-link');
  if(scoreHistory)scoreHistory.remove();
  const actions={

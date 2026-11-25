@@ -363,17 +363,31 @@ public class MainActivity extends Activity {
                     String cookie = android.webkit.CookieManager.getInstance().getCookie(MireaAcademicApi.ORIGIN + "/");
                     if (session.isEmpty() || !session.equals(mireaSessionKey(cookie))) throw new MireaAcademicApi.SignInRequired();
                     stage = "journal-entries";
-                    var attendance = new MireaAcademicApi(cookie).attendance(discipline);
-                    journals = attendance.journals();
-                    parsed = attendance.total();
+                    var view = new MireaAcademicApi(cookie).attendance(discipline);
+                    journals = view.journals();
                     if (!session.equals(currentMireaSessionKey())) throw new MireaAcademicApi.SignInRequired();
-                    var rows = new org.json.JSONArray();
-                    for (var entry : attendance.entries()) {
-                        rows.put(new JSONObject().put("start", entry.start()).put("type", entry.type()));
+                    var attendance = view.details();
+                    if (attendance != null) {
+                        var rows = new org.json.JSONArray();
+                        for (var entry : attendance.entries()) {
+                            rows.put(new JSONObject().put("start", entry.start()).put("type", entry.type()));
+                        }
+                        parsed = attendance.total();
+                        code = attendance.partial() ? "partial" : parsed == 0 ? "empty" : "ok";
+                        result.put("entries", rows).put("present", attendance.present()).put("absent", attendance.absent())
+                            .put("excused", attendance.excused()).put("total", parsed).put("partial", attendance.partial());
+                    } else {
+                        code = view.error();
+                        result.put("error", code);
                     }
-                    code = attendance.partial() ? "partial" : attendance.total() == 0 ? "empty" : "ok";
-                    result.put("entries", rows).put("present", attendance.present()).put("absent", attendance.absent())
-                        .put("excused", attendance.excused()).put("total", attendance.total()).put("partial", attendance.partial());
+                    if (!view.summaries().isEmpty()) {
+                        stage = "journal-summary";
+                        var summaries = new org.json.JSONArray();
+                        for (var summary : view.summaries()) summaries.put(new JSONObject().put("present", summary.present())
+                            .put("absent", summary.absent()).put("excused", summary.excused()).put("total", summary.total()));
+                        result.put("summaries", summaries);
+                        code = "summary";
+                    }
                 } catch (Exception error) {
                     if (error instanceof MireaAcademicApi.AttendanceFailure failure) {
                         code = failure.code;
