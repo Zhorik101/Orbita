@@ -39,7 +39,7 @@ const {chromium}=require('playwright');
    showPage('miniapps');
   });
   await page.locator('[data-tool="sdo"]').click();
-  assert.match(await page.locator('#sdo-content').innerText(),/Автоматическое подключение/);
+  assert.match(await page.locator('#sdo-content').innerText(),/Импорт ссылок/);
   assert.equal(await page.getByRole('link',{name:'Мои курсы в СДО ↗'}).getAttribute('href'),'https://online-edu.mirea.ru/my/courses.php');
   await page.getByRole('button',{name:'+ Курс',exact:true}).click();
   await page.locator('#sdo-edit-title').fill('Лабораторный практикум по химии');
@@ -107,6 +107,22 @@ const {chromium}=require('playwright');
   assert.match(await page.locator('#sdo-content').innerText(),/Лабораторный практикум/);
   await page.locator('#sdo-mode').selectOption('materials');
   assert.match(await page.locator('#sdo-content').innerText(),/Копия отсутствует/);
+  await page.evaluate(()=>{
+   const course='https://online-edu.mirea.ru/course/view.php?id=99';
+   window.orbitaSdoPortalImport(JSON.stringify({links:[
+    {url:course+'&sesskey=secret',title:'Курс со страницы'},
+    {url:course,title:'Дубликат'},
+    {url:'https://example.org/course/view.php?id=12',title:'Сторонний курс'}
+   ]}));
+   window.orbitaSdoPortalImport(JSON.stringify({course,title:'Курс со страницы',links:[
+    {url:'https://online-edu.mirea.ru/mod/assign/view.php?id=17&token=secret',title:'Условие лабораторной',section:'Тема 2'}
+   ]}));
+  });
+  assert.match(await page.locator('#sdo-content').innerText(),/Тема 2/);
+  assert.match(await page.locator('#sdo-content').innerText(),/Со страницы СДО/);
+  const imported=await page.evaluate(()=>state.sdo.items.filter(item=>item.source==='portal'));
+  assert.equal(imported.length,2);
+  assert(!JSON.stringify(imported).includes('secret'));
   assert.deepEqual(errors,[]);
   console.log('PASS saved SDO links, manual course structure, task linking, import cancellation, offline bridge, profile and mobile UI');
  }finally{await browser.close()}
