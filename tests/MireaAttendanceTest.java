@@ -38,6 +38,11 @@ public class MireaAttendanceTest {
         var summary = MireaAcademicApi.attendanceSummary(MireaAcademicApi.fields(message(1, stats)));
         check(summary.present() == 9 && summary.absent() == 5 && summary.total() == 18);
         check(MireaAcademicApi.attendanceSummary(MireaAcademicApi.fields(message(2, number(1, 3)))) == null);
+        byte[] dailyLesson = concat(message(2, number(1, START)), message(4,
+            message(2, "Философия".getBytes(java.nio.charset.StandardCharsets.UTF_8))));
+        var daily = MireaAcademicApi.parseDailyMarks(MireaAcademicApi.fields(
+            message(1, concat(message(3, dailyLesson), message(4, number(2, 1))))));
+        check(daily.size() == 1 && daily.get(0).type() == 3 && daily.get(0).start() == START);
         System.out.println("PASS attendance journals, nesting, confirmed empty, parse/network failures and retry");
     }
 

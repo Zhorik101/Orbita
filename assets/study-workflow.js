@@ -111,7 +111,6 @@ addTask=function(subjectPreset, options={}){
    if(changeWork(index,'delete'))$('#modal').close();
   };
   window.addControlTaskLink?.(original,$('#save-work-template'));
-  window.addDebtMarkAction?.('task:'+original.workId,$('#save-work-template'),()=>addTask(null,{workId:original.workId}));
   $('#work-intro').textContent='';
   $('#work-intro').hidden=true;
   $('#work-number').value=initialNumber;
@@ -292,7 +291,11 @@ window.orbitaMireaAttendance=(request,result)=>{
 };
 function paintAttendanceDialog(){
  const box=$('#course-attendance-content'),{id}=attendanceDialog,info=attendanceByCourse.get(id);
- if(!info){box.textContent='Загружаем посещения…';return}
+ if(!info){
+  box.innerHTML='<p>Загружаем посещения…</p>';
+  paintRecentCourseAttendance(box);
+  return;
+ }
  const scope='<p>Все доступные отметки по дисциплине. Они могут относиться к нескольким семестрам.</p>';
  const refresh='<button type="button" id="retry-course-attendance">'+(info.error==='login'?'Войти':info.error||info.partial?'Повторить':'Обновить')+'</button>';
  if(info.error){
@@ -315,13 +318,18 @@ function paintAttendanceDialog(){
     return `<div class="attendance-row ${kind}"><time>${lessonDateFormat.format(entry.start*1000)}</time><b>${name}</b></div>`;
    }).join('')}</div>`;
  }
+ if(!info.entries?.length&&info.error!=='login')paintRecentCourseAttendance(box);
  $('#retry-course-attendance').onclick=()=>{
   if(info.error==='login'){openPulseGrades(true);$('#modal').close();return}
+  for(const date of attendanceDialog.dates||[]){
+   const key=dateKey(date);
+   if(dailyAttendance.get(key)?.error)dailyAttendance.delete(key);
+  }
   attendanceByCourse.delete(id);requestCourseAttendance(id);paintAttendanceDialog();
  };
 }
 function showCourseAttendance(id,name){
- attendanceDialog={id};
+ attendanceDialog={id,name,dates:null};
  if(attendanceByCourse.get(id)?.error && attendanceByCourse.get(id).error!=='login')attendanceByCourse.delete(id);
  modal(`<h2>Посещения по дисциплине</h2><p>${safe(name)}</p><div id="course-attendance-content"></div>`);
  requestCourseAttendance(id);
@@ -349,7 +357,49 @@ window.orbitaMireaDailyMarks=(request,result)=>{
  dailyAttendanceRequests.delete(request);
  dailyAttendance.set(key,result);
  if(page==='pairs'&&dateKey(pairsDate)===key)renderPairs();
+ if(attendanceDialog?.dates?.some(date=>dateKey(date)===key)&&$('#modal').open&&$('#course-attendance-content'))paintAttendanceDialog();
 };
+// Use the signed-in student's dated marks when the discipline journal is unavailable.
+function recentCourseDates(name){
+ const group=state.pinnedGroup||state.officialGroup;
+ if(!group)return [];
+ const dates=[];
+ const today=new Date(moscowParts(new Date()).date+'T12:00:00');
+ const subject=subjectKey(name);
+ for(let offset=0;offset<90&&dates.length<6;offset++){
+  const date=new Date(today);
+  date.setDate(today.getDate()-offset);
+  if(officialLessons(group,date).some(lesson=>subjectKey(lesson.title)===subject))dates.push(date);
+ }
+ return dates;
+}
+function paintRecentCourseAttendance(box){
+ if(!window.OrbitaAndroid?.loadMireaDailyMarks)return;
+ const dialog=attendanceDialog;
+ if(!dialog.dates)dialog.dates=recentCourseDates(dialog.name);
+ if(!dialog.dates.length)return;
+ const missing=dialog.dates.find(date=>!dailyAttendance.has(dateKey(date)));
+ const pending=dialog.dates.some(date=>dailyAttendance.get(dateKey(date))===null);
+ if(!pending&&missing)requestDailyAttendance(missing);
+ const subject=subjectKey(dialog.name);
+ const results=dialog.dates.map(date=>dailyAttendance.get(dateKey(date)));
+ const seen=new Set();
+ const rows=results.flatMap(result=>result?.entries||[]).filter(mark=>{
+  if(mark.disciplineId ? mark.disciplineId!==dialog.id : subjectKey(mark.subject||'')!==subject)return false;
+  if(!attendanceTypes[mark.type]||!Number.isFinite(mark.start))return false;
+  if(!mark.lessonId)return true;
+  if(seen.has(mark.lessonId))return false;
+  seen.add(mark.lessonId);
+  return true;
+ }).sort((a,b)=>b.start-a.start);
+ const note=missing||pending?'Проверяем последние занятия в дневном журнале Пульса…'
+  :results.some(result=>result?.error)?'Часть дат не удалось проверить.':'Проверены даты последних занятий из расписания.';
+ box.insertAdjacentHTML('beforeend',`<section><h3>Последние занятия</h3><p>${note}</p>
+  ${rows.length?`<div class="attendance-rows">${rows.map(mark=>{
+   const [label,kind]=attendanceTypes[mark.type];
+   return `<div class="attendance-row ${kind}"><time>${lessonDateFormat.format(mark.start*1000)}</time><b>${label}</b></div>`;
+  }).join('')}</div>`:''}</section>`);
+}
 function retryVisibleAttendance(){
  if(document.hidden||page!=='pairs'||pairsMode!=='day'||!ownPairsSelected())return;
  const day=dateKey(pairsDate);
@@ -496,7 +546,7 @@ function paintCourseTools(){
  const rowsBySubject=[...subjects.values()].sort((a,b)=>a.name.localeCompare(b.name,'ru'));
  $('#mini-courses-body').innerHTML=rowsBySubject.map(({name,score},index)=>`<article class="course-discipline">
  <div class="course-discipline-heading"><h2><button type="button" class="discipline-open" data-open-discipline="${index}">${safe(name)} ${courseChevron()}</button></h2><button type="button" data-course-task="${index}">+ Работа</button></div>
- ${courseScoreHtml(score)}${window.courseRetakeBadge?.({name,id:score?.id,term:score?.term})||''}</article>`).join('')||(!courseGradesLoading&&!result?.error&&result?'<p>В этом семестре нет дисциплин в БРС.</p>':'');
+ ${courseScoreHtml(score)}</article>`).join('')||(!courseGradesLoading&&!result?.error&&result?'<p>В этом семестре нет дисциплин в БРС.</p>':'');
  $$('[data-open-discipline]').forEach(button=>{
   const row=rowsBySubject[Number(button.dataset.openDiscipline)];
   button.onclick=()=>window.openDiscipline?.(row.name,row.score);

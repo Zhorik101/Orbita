@@ -339,7 +339,8 @@ public class MainActivity extends Activity {
                     if (!session.equals(currentMireaSessionKey())) throw new MireaAcademicApi.SignInRequired();
                     var rows = new org.json.JSONArray();
                     for (var mark : marks) {
-                        rows.put(new JSONObject().put("subject", mark.subject()).put("start", mark.start()).put("type", mark.type()));
+                        rows.put(new JSONObject().put("subject", mark.subject()).put("start", mark.start()).put("type", mark.type())
+                            .put("disciplineId", mark.disciplineId()).put("lessonId", mark.lessonId()));
                     }
                     result.put("entries", rows);
                 } catch (Exception error) {

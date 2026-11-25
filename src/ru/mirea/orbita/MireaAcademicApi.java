@@ -25,7 +25,7 @@ final class MireaAcademicApi {
     record Category(String name, double points, Double maximum) {}
     record Course(String id, String name, int term, Double total, Double maximum, Double attendance,
                   List<Category> categories, Double threshold, String thresholdName, int present, int lessons) {}
-    record DailyMark(String subject, long start, int type) {}
+    record DailyMark(String subject, long start, int type, String disciplineId, String lessonId) {}
     private static final Map<String, String> CATEGORY_NAMES = categoryNames();
 
     private static Map<String, String> categoryNames() {
@@ -229,20 +229,26 @@ final class MireaAcademicApi {
 
     static List<DailyMark> parseDailyMarks(List<Field> data) throws IOException {
         var marks = new ArrayList<DailyMark>();
-        for (var entry : messages(data, 2)) {
-            var lesson = message(entry, 3);
-            var status = message(entry, 4);
-            if (status.isEmpty()) continue;
-            int type = switch (status.get(0).number()) {
-                case 1 -> 1;
-                case 2 -> 3;
-                case 3 -> 2;
-                default -> 0;
-            };
-            String subject = string(message(lesson, 4), 2);
-            Double start = number(message(lesson, 2), 1);
-            if (type != 0 && !subject.isEmpty() && start != null && start > 0) {
-                marks.add(new DailyMark(subject, start.longValue(), type));
+        for (int field : new int[]{1, 2}) {
+            for (var entry : safeMessages(data, field)) {
+                var lesson = safeMessage(entry, 3);
+                var status = safeMessage(entry, 4);
+                if (status.isEmpty()) continue;
+                int type = switch (status.get(0).number()) {
+                    case 1 -> 1;
+                    case 2 -> 3;
+                    case 3 -> 2;
+                    default -> 0;
+                };
+                var discipline = safeMessage(lesson, 4);
+                String subject = string(discipline, 2);
+                String disciplineId = string(discipline, 1), lessonId = string(lesson, 1);
+                Double start = number(safeMessage(lesson, 2), 1);
+                if (type != 0 && !subject.isEmpty() && start != null && start > 1_500_000_000L
+                        && start <= java.time.Instant.now().getEpochSecond() + 120) {
+                    marks.add(new DailyMark(subject, start.longValue(), type,
+                        disciplineId.matches(UUID) ? disciplineId : "", lessonId.matches(UUID) ? lessonId : ""));
+                }
             }
         }
         return marks;

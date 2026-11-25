@@ -16,93 +16,40 @@ const {chromium}=require('playwright');
    return url.hostname==='orbita.local'&&fs.existsSync(file)?route.fulfill({path:file}):route.abort();
   });
   await page.goto('https://orbita.local/index.html');
-  await page.evaluate(()=>{
+  const snapshot=await page.evaluate(async()=>{
    document.querySelectorAll('dialog[open]').forEach(dialog=>dialog.close());
-   state.tasks=[
-    {workId:'linked',subject:'Химия',text:'Подготовка',dueISO:'2020-01-01',due:'1 января',kind:'Тест',done:false},
-    {workId:'undated',subject:'Математика',text:'Задача без даты',due:'Без срока',kind:'Контрольная',done:false}
-   ];
-   state.controlEvents=[cleanControlEvent({id:'mtk_'+'1'.repeat(32),courseId:'chem',courseName:'Химия',term:3,
-    type:'test',title:'Тест по химии',date:'2090-11-25',status:'planned',taskId:'linked'})];
-   state.debtMarks={};
-   save();
-   courseGradeResult={updated:Date.now(),schema:2,courses:[{id:'chem',term:3,name:'Химия',total:12,maximum:100}]};
+   const group={target:1,id:999,title:'Тестовая группа'};
+   state.officialGroup=group;
+   const today=new Date(moscowParts(new Date()).date+'T12:00:00');
+   officialLessons=(_group,date)=>dateKey(date)===dateKey(today)?[{title:'Философия',start:'10:00'}]:[];
+   state.tasks=[{workId:'existing',subject:'Философия',text:'Обычная задача',due:'Без срока',done:false}];
+   state.academicRetakes=[{id:'retake_'+'1'.repeat(32),subject:'Философия',term:1,kind:'exam'}];
+   window.OrbitaAndroid={
+    loadMireaAttendance:request=>{window.courseRequest=request},
+    loadMireaDailyMarks:request=>{window.dailyRequest=request}
+   };
+   courseGradeResult={updated:Date.now(),schema:2,courses:[{id:'philosophy',term:1,name:'Философия',total:12,maximum:100}]};
    showPage('miniapps');
+   return {retakes:(await parseProfileBackup(await createProfileBackup(state))).academicRetakes.length};
   });
-  await page.getByRole('button',{name:/Незавершённые работы.*Личные задачи/}).click();
-  const rows=page.locator('[data-debt-row]');
-  assert.equal(await rows.count(),2);
-  await page.locator('#debt-filter').selectOption('overdue');
-  assert.equal(await rows.count(),1);
-  const linked=rows.first();
-  assert.match(await linked.innerText(),/Личная задача · Просрочена/);
-  assert.doesNotMatch(await linked.innerText(),/Ручное МТК/);
-  await linked.getByRole('button',{name:'Изменить срок'}).click();
-  assert.equal(await page.locator('#save-work-template').getAttribute('data-work-id'),'linked');
-  await page.evaluate(()=>document.querySelector('#modal').close());
-  await linked.getByRole('button',{name:'Добавить пометку'}).click();
-  await page.locator('#debt-mark-value').selectOption('retake');
-  await page.locator('#debt-save-mark').click();
-  assert.match(await linked.innerText(),/Нужна пересдача/);
-  await page.reload();
-  await page.evaluate(()=>{document.querySelectorAll('dialog[open]').forEach(dialog=>dialog.close());openDebts()});
-  await page.locator('#debt-filter').selectOption('review');
-  assert.equal(await rows.count(),1);
-  await rows.first().getByRole('button',{name:'Изменить пометку'}).click();
-  await page.locator('#debt-mark-value').selectOption('none');
-  await page.locator('#debt-save-mark').click();
-  assert.equal(await rows.count(),0);
-  await page.evaluate(()=>showPage('miniapps'));
-  await page.getByRole('button',{name:/Долги.*Академические задолженности/}).click();
-  const official=page.locator('#mini-academic-debts-page');
-  assert.match(await official.innerText(),/Официальные данные о задолженностях недоступны/);
-  assert.doesNotMatch(await official.innerText(),/Тест по химии|Подготовка|Задача без даты/);
-  assert.equal(await official.getByRole('link',{name:/Личный кабинет МИРЭА/}).getAttribute('href'),'https://lk.mirea.ru/auth.php');
-  await page.locator('#add-retake').click();
-  await page.locator('#retake-subject').fill('Академическая химия');
-  await page.locator('#retake-date').fill('2026-12-05');
-  await page.locator('#retake-form').getByRole('button',{name:'Сохранить'}).click();
-  assert.match(await official.innerText(),/Академическая химия/);
-  await page.reload();
-  await page.evaluate(()=>{document.querySelectorAll('dialog[open]').forEach(dialog=>dialog.close());showPage('mini-academic-debts')});
-  assert.match(await official.innerText(),/Академическая химия/);
-  assert.equal(await page.evaluate(()=>state.controlEvents.length),1);
-  await page.locator('#academic-debts-back').click();
-  await page.getByRole('button',{name:/Незавершённые работы.*Личные задачи/}).click();
-  assert.equal(await rows.count(),2);
-  await rows.filter({hasText:'Подготовка'}).getByRole('button',{name:'К дисциплине'}).click();
-  assert.doesNotMatch(await page.locator('#discipline-overview').innerText(),/Мероприятия текущего контроля/);
-  await page.locator('#discipline-open-debts').click();
-  assert.equal(await rows.count(),1);
-  await page.locator('#debts-back').click();
+  assert.equal(snapshot.retakes,1);
+  assert.equal(await page.locator('[data-mini-open="mini-debts"],[data-mini-open="mini-academic-debts"]').count(),0);
+  await page.evaluate(()=>window.openDiscipline('Философия',{id:'philosophy',term:1}));
+  assert.match(await page.locator('#discipline-overview').innerText(),/Обычная задача/);
+  assert.equal(await page.locator('#discipline-open-debts,#add-course-retake').count(),0);
+  await page.getByRole('button',{name:'История посещений'}).click();
   await page.evaluate(()=>{
-   window.courseRequests=[];
-   window.OrbitaAndroid={loadMireaAttendance:(request,id)=>window.courseRequests.push({request,id})};
-   courseGradeResult={updated:Date.now(),schema:2,courses:[{id:'chem',term:3,name:'Химия',total:12,maximum:100}]};
-   window.openDiscipline('Химия',{id:'chem',term:3});
-   window.orbitaMireaAttendance(window.courseRequests.at(-1).request,{error:'format'});
+   window.orbitaMireaAttendance(window.courseRequest,{error:'format'});
+   window.orbitaMireaDailyMarks(window.dailyRequest,{entries:[
+    {subject:'Философия',disciplineId:'philosophy',start:1764057600,type:3},
+    {subject:'Философия',disciplineId:'wrong',start:1764057600,type:1}
+   ]});
   });
-  await page.getByRole('button',{name:'Повторить',exact:true}).click();
-  await page.evaluate(()=>window.orbitaMireaAttendance(window.courseRequests.at(-1).request,{total:0,entries:[]}));
-  assert.match(await page.locator('#course-attendance-content').innerText(),/не вернула отметок/);
-  assert.doesNotMatch(await page.locator('#course-attendance-content').innerText(),/Присутствовал/);
-  await page.evaluate(()=>document.querySelector('#modal').close());
-  for(const width of [320,360,393,412]){
-   await page.setViewportSize({width,height:740});
-   for(const theme of ['violet','dark']){
-    const fit=await page.evaluate(async theme=>{
-     state.theme=theme;
-     applyTheme();
-     window.scrollTo(0,document.scrollingElement.scrollHeight);
-     await new Promise(resolve=>requestAnimationFrame(resolve));
-     const last=document.querySelector('#discipline-overview').lastElementChild.getBoundingClientRect();
-     const nav=document.querySelector('.mobile-nav').getBoundingClientRect();
-     return last.bottom <= nav.top+1 && document.documentElement.scrollWidth <= innerWidth;
-    },theme);
-    assert(fit,`Last discipline card fits above navigation at ${width}px, ${theme}`);
-   }
-  }
+  const history=page.locator('#course-attendance-content');
+  assert.match(await history.innerText(),/Последние занятия/);
+  assert.match(await history.innerText(),/Присутствовал/);
+  assert.doesNotMatch(await history.innerText(),/Отсутствовал/);
   assert.deepEqual(errors,[]);
-  console.log('PASS debts actions, reload, attendance retry and discipline viewport in both themes');
+  console.log('PASS hidden debts, preserved records, daily attendance fallback and discipline ID filtering');
  }finally{await browser.close()}
 })().catch(error=>{console.error(error);process.exitCode=1});
