@@ -321,7 +321,7 @@ function paintAttendanceDialog(){
    format:'Не удалось разобрать журнал МИРЭА.',journals:'МИРЭА не вернула доступные журналы.'};
   box.innerHTML='<p>'+(message[info.error]||'Не удалось загрузить посещения.')+'</p>'+refresh;
  }else if(info.summaries?.length){
-  box.innerHTML=scope+'<p>Пульс вернул сводку. Подробные отметки по датам недоступны.</p>'+refresh+
+  box.innerHTML=scope+'<p>Пульс вернул сводку. Подробные отметки по датам недоступны.</p><p>'+safe(window.disciplineUpdated?.(info.updated)||'')+'</p>'+refresh+
    info.summaries.map((row,index)=>`<p>Журнал ${index+1} · Присутствий: ${row.present} · Пропусков: ${row.absent} · По уважительной причине: ${row.excused} · Всего занятий: ${row.total}</p>`).join('');
  }else if(!info.total){
   box.innerHTML=scope+'<p>МИРЭА не вернула отметок по предмету в доступных журналах.</p>'+refresh;
@@ -351,7 +351,12 @@ function showCourseAttendance(id,name){
      <label>С <input type="date" id="attendance-from"></label>
      <label>По <input type="date" id="attendance-to"></label></div>
     <p id="attendance-period-error" role="status"></p><button type="submit">Показать отметки</button>
-   </form></details>`:''}<div id="course-attendance-content"></div>`);
+   </form></details>`:''}
+  <label class="attendance-filter-label">Отметки <select id="attendance-mark-filter">
+   <option value="all">Все</option><option value="3">Присутствовал</option><option value="1">Отсутствовал</option>
+   <option value="2">Уважительная причина</option>
+  </select></label><div id="course-attendance-content"></div>`);
+ $('#attendance-mark-filter').onchange=event=>{attendanceDialog.filter=event.target.value;paintAttendanceDialog()};
  const selector=$('#attendance-period');
  if(selector){
   const range=$('#attendance-range');
@@ -405,7 +410,7 @@ window.orbitaMireaDailyMarks=(request,result)=>{
  dailyAttendanceRequests.delete(request);
  result=Array.isArray(result?.entries)?{...result,updated:Date.now()}:{error:result?.error||'format'};
  dailyAttendance.set(key,result);
- if(page==='pairs'&&dateKey(pairsDate)===key)renderPairs();
+ if(page==='pairs'&&(dateKey(pairsDate)===key||!dailyAttendance.has(dateKey(pairsDate))))renderPairs();
  if(attendanceDialog?.dates&&$('#modal').open&&$('#course-attendance-content')){
   if(result?.error&&attendanceDialog.dates.some(date=>dateKey(date)===key))attendanceDialog.paused=true;
   paintAttendanceDialog();
@@ -450,7 +455,7 @@ function summarizeCourseDays(dialog){
   updated=Math.max(updated,result.updated||0);
   for(const mark of result.entries){
    if(mark.disciplineId?mark.disciplineId!==dialog.id:subjectKey(mark.subject||'')!==subject)continue;
-   if(!Number.isFinite(mark.start))continue;
+   if(!Number.isFinite(mark.start)||moscowParts(new Date(mark.start*1000)).date!==dateKey(date))continue;
    const entry={...mark,type:attendanceTypes[mark.type]?mark.type:0};
    if(!mark.lessonId){distinct.push(entry);continue}
    const previous=identified.get(mark.lessonId);

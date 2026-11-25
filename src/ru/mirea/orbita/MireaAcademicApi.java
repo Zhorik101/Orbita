@@ -229,12 +229,13 @@ final class MireaAcademicApi {
 
     static List<DailyMark> parseDailyMarks(List<Field> data) throws IOException {
         var marks = new ArrayList<DailyMark>();
+        boolean recognized = data.isEmpty();
         for (int field : new int[]{1, 2}) {
             for (var entry : safeMessages(data, field)) {
                 var lesson = safeMessage(entry, 3);
                 var status = safeMessage(entry, 4);
-                if (status.isEmpty()) continue;
-                int type = switch (status.get(0).number()) {
+
+                int type = switch (status.isEmpty() ? 0 : status.get(0).number()) {
                     case 1 -> 1;
                     case 2 -> 3;
                     case 3 -> 2;
@@ -244,13 +245,15 @@ final class MireaAcademicApi {
                 String subject = string(discipline, 2);
                 String disciplineId = string(discipline, 1), lessonId = string(lesson, 1);
                 Double start = number(safeMessage(lesson, 2), 1);
-                if (type != 0 && !subject.isEmpty() && start != null && start > 1_500_000_000L
-                        && start <= java.time.Instant.now().getEpochSecond() + 120) {
+                if (!subject.isEmpty() && start != null && start > 1_500_000_000L && start < 4_102_444_800L) {
+                    recognized = true;
+                    if (status.isEmpty() || start > java.time.Instant.now().getEpochSecond() + 120) continue;
                     marks.add(new DailyMark(subject, start.longValue(), type,
                         disciplineId.matches(UUID) ? disciplineId : "", lessonId.matches(UUID) ? lessonId : ""));
                 }
             }
         }
+        if (!recognized) throw new AttendanceFailure("format", 0, "day-entries");
         return marks;
     }
 

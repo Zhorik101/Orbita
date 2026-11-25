@@ -344,7 +344,8 @@ public class MainActivity extends Activity {
                     }
                     result.put("entries", rows);
                 } catch (Exception error) {
-                    try { result.put("error", error instanceof MireaAcademicApi.SignInRequired ? "login" : "network"); }
+                    try { result.put("error", error instanceof MireaAcademicApi.SignInRequired ? "login"
+                        : error instanceof MireaAcademicApi.AttendanceFailure failure ? failure.code : "network"); }
                     catch (org.json.JSONException ignored) {}
                 }
                 android.util.Log.i("OrbitaAttendance", "request=" + requestId + " method=daily stage=day-entries journals=0 parsed="

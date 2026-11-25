@@ -42,9 +42,10 @@ const {chromium}=require('playwright');
   await page.getByRole('button',{name:'История посещений'}).click();
   await page.evaluate(()=>{
    window.orbitaMireaAttendance(window.courseRequest,{error:'format'});
+   const start=Date.parse(moscowParts(new Date()).date+'T00:00:00+03:00')/1000;
    window.orbitaMireaDailyMarks(window.dailyRequest,{entries:[
-    {subject:'Философия',disciplineId:'philosophy',start:1764057600,type:3},
-    {subject:'Философия',disciplineId:'wrong',start:1764057600,type:1}
+    {subject:'Философия',disciplineId:'philosophy',start,type:3},
+    {subject:'Философия',disciplineId:'wrong',start,type:1}
    ]});
   });
   const history=page.locator('#course-attendance-content');

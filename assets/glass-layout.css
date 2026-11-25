@@ -250,7 +250,7 @@ body[data-glass]:not([data-glass="off"]) :is(
 }
 #modal:has(#course-attendance-content) .unified-dialog-body p { margin-block: 5px; line-height: 1.4; }
 #modal:has(#course-attendance-content) :is(button,select,input,summary) { min-height: 44px; }
-#modal:has(#course-attendance-content) > .close { min-height: 44px; min-width: 44px; top: 9px; }
+#modal:has(#course-attendance-content) > form .close { min-height: 44px; min-width: 44px; top: 9px; }
 #attendance-period-options { border-block: 1px solid var(--line); margin-bottom: 6px; }
 #attendance-period-options summary { display: flex; align-items: center; cursor: pointer; color: var(--accent); }
 #attendance-period-options summary::after { content: '⌄'; margin-inline-start: auto; }
