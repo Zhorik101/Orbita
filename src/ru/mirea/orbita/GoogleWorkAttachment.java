@@ -52,8 +52,10 @@ final class GoogleWorkAttachment {
     String info(String id) {
         if (!validId(id)) return "{}";
         try {
-            return new JSONObject(storage().getString(id, "{}"))
-                .put("selected", storage().contains("source:"+id)).toString();
+            JSONObject result=new JSONObject(storage().getString(id,"{}"));
+            JSONObject pending=result.optJSONObject("pending");
+            if (pending!=null) result.put("drivePending",pending);
+            return result.put("selected", storage().contains("source:"+id)).toString();
         } catch (org.json.JSONException invalid) { return "{}"; }
     }
 
@@ -186,9 +188,11 @@ final class GoogleWorkAttachment {
 
     private void authorize() {
         try {
-            String account=trashMode?completedAttachment(workId).getString("account"):selectedCalendar(attachmentState(workId)).account();
+            JSONObject state=trashMode?null:attachmentState(workId);
+            boolean driveOnly=state!=null && WidgetTasks.find(state,workId).optString("dueISO").isEmpty();
+            String account=trashMode?completedAttachment(workId).getString("account"):selectedCalendar(state).account();
             authorizationAccount=account;
-            java.util.List<Scope> scopes=trashMode?java.util.Collections.singletonList(new Scope(DRIVE_SCOPE)):
+            java.util.List<Scope> scopes=trashMode||driveOnly?java.util.Collections.singletonList(new Scope(DRIVE_SCOPE)):
                 Arrays.asList(new Scope(CALENDAR_SCOPE),new Scope(DRIVE_SCOPE));
             AuthorizationRequest request=AuthorizationRequest.builder()
                 .setAccount(new Account(account,"com.google")).setRequestedScopes(scopes).build();
@@ -218,13 +222,14 @@ final class GoogleWorkAttachment {
         final boolean trash=trashMode;
         final String account=authorizationAccount;
         busy = true;
-        if(!trash)listener.report(id, "Проверяем, появилось ли событие в Google…",false);
+        if(!trash)listener.report(id, "Загружаем файл на Google Диск…",false);
         executor.execute(() -> {
             String message;
             boolean success=false;
             try {
                 if(trash){trashAttachments(id,token);message="Вложения перенесены в корзину Диска.";}
-                else {attach(id,picked,token,account);message="Файл прикреплён в Google Календаре.";}
+                else {message=attach(id,picked,token,account)
+                    ?"Файл прикреплён в Google Календаре.":"Файл сохранён на Google Диске.";}
                 success=true;
             }
             catch (Failure problem) { message = problem.getMessage(); }
@@ -256,9 +261,9 @@ final class GoogleWorkAttachment {
     private JSONObject attachmentState(String id) throws Exception {
         JSONObject state = new JSONObject(activity.getSharedPreferences("orbita", 0).getString("state","{}"));
         JSONObject task = WidgetTasks.find(state,id), config=state.optJSONObject("calendarAutoSync");
-        if (task == null || task.optBoolean("done") || task.optString("dueISO").isEmpty())
+        if (task == null || task.optBoolean("done"))
             throw new Failure("Вложение можно добавить к незавершённой задаче со сроком.");
-        if (config == null || !config.optBoolean("tasks") || !CalendarImport.allowed(activity))
+        if (config == null || (!task.optString("dueISO").isEmpty() && !config.optBoolean("tasks")) || !CalendarImport.allowed(activity))
             throw new Failure("Включи синхронизацию задач с Google Календарём в настройках.");
         return state;
     }
@@ -297,17 +302,26 @@ final class GoogleWorkAttachment {
         return null;
     }
 
-    private Event awaitSyncedEvent(String id, String account) throws Exception {
-        final long deadline = android.os.SystemClock.elapsedRealtime() + 10000;
+    private record ConfirmedEvent(Event target,JSONObject remote) {}
+    private static final class MissingEvent extends Exception {}
+
+    private ConfirmedEvent awaitSyncedEvent(String id,String account,String token) throws Exception {
+        final long deadline = android.os.SystemClock.elapsedRealtime() + 90000;
         for (long delay = 400; ; delay = Math.min(delay * 2, 2000)) {
             if (activity.isDestroyed() || Thread.currentThread().isInterrupted()) {
                 throw new Failure("Операция прервана. Выбранный файл можно прикрепить повторно.");
             }
             Event event = findSyncedEvent(id, account);
-            if (event != null) return event;
+            if (event != null) {
+                try {
+                    JSONObject remote=request("GET",event.url(),token,null,null);
+                    JSONObject start=remote.optJSONObject("start");
+                    if (start!=null && event.day.equals(start.optString("date"))) return new ConfirmedEvent(event,remote);
+                } catch (MissingEvent waiting) {}
+            }
             long remaining = deadline - android.os.SystemClock.elapsedRealtime();
             if (remaining <= 0) {
-                throw new Failure("Google ещё не получил событие. Файл не загружен. Когда событие появится в Google Календаре, нажми «Повторить».");
+                throw new Failure("Файл сохранён на Диске. Событие Google пока не появилось. Прикрепление можно повторить.");
             }
             try {
                 Thread.sleep(Math.min(delay, remaining));
@@ -318,21 +332,23 @@ final class GoogleWorkAttachment {
         }
     }
 
-    private void attach(String id, Uri picked, String token, String account) throws Exception {
-        Event target=awaitSyncedEvent(id, account);
-        JSONObject google=request("GET",target.url(),token,null,null);
-        if(!target.day.equals(google.optJSONObject("start") == null ? "" : google.getJSONObject("start").optString("date")))
-            throw new Failure("Дата события в Google ещё не обновилась. Попробуй после синхронизации.");
+    private boolean attach(String id, Uri picked, String token, String account) throws Exception {
+        JSONObject state=attachmentState(id);
+        if (!account.equals(selectedCalendar(state).account()))
+            throw new Failure("Выбран другой Google-аккаунт. Подключись к выбранному аккаунту.");
+        boolean driveOnly=WidgetTasks.find(state,id).optString("dueISO").isEmpty();
         JSONObject cached=new JSONObject(storage().getString(id,"{}"));
         JSONArray attachedFiles=cached.optJSONArray("files");
         if(attachedFiles==null)attachedFiles=new JSONArray();
         JSONObject attachment;
         if(picked!=null){
-            if(cached.optJSONObject("pending")!=null)throw new Failure("Сначала повтори прикрепление предыдущего файла.");
             String sourceKey = (activity.getPackageName()+".materials").equals(picked.getAuthority())
                 ? CalendarImport.hash(picked.getEncodedPath()) : "";
-            attachment=null;
-            if (!sourceKey.isEmpty() && target.account.equals(cached.optString("account"))) {
+            attachment=cached.optJSONObject("pending");
+            if (attachment!=null && (!account.equals(cached.optString("account"))
+                    || sourceKey.isEmpty() || !sourceKey.equals(attachment.optString("sourceKey"))))
+                throw new Failure("Сначала повтори прикрепление предыдущего файла.");
+            if (attachment==null && !sourceKey.isEmpty() && account.equals(cached.optString("account"))) {
                 for (int i=0;i<attachedFiles.length();i++) {
                     JSONObject existing=attachedFiles.optJSONObject(i);
                     if (existing!=null && sourceKey.equals(existing.optString("sourceKey"))) {
@@ -345,15 +361,23 @@ final class GoogleWorkAttachment {
                 attachment=upload(picked,token);
                 if (!sourceKey.isEmpty()) attachment.put("sourceKey",sourceKey);
             }
-            cached.put("pending",attachment).put("files",attachedFiles).put("account",target.account);
+            cached.put("pending",attachment).put("files",attachedFiles).put("account",account);
             if(!storage().edit().putString(id,cached.toString()).remove("source:"+id).commit())throw new Failure("Не удалось сохранить данные файла. Загруженный файл остался на Диске.");
             try { activity.getContentResolver().releasePersistableUriPermission(picked,Intent.FLAG_GRANT_READ_URI_PERMISSION); }
             catch (SecurityException ignored) {}
         }else{
             attachment=cached.optJSONObject("pending");
             if(attachment==null)throw new Failure("Нет файла, ожидающего прикрепления.");
-            if(!target.account.equals(cached.optString("account")))throw new Failure("Для закрепления файла выбери тот же Google-аккаунт, в который он загружен.");
+            if(!account.equals(cached.optString("account")))throw new Failure("Для закрепления файла выбери тот же Google-аккаунт, в который он загружен.");
         }
+        if (driveOnly) {
+            storeCompletedAttachment(id,cached,attachedFiles,attachment);
+            return false;
+        }
+        activity.runOnUiThread(() -> listener.report(id,"Файл на Диске. Ожидаем событие Google…",false));
+        ConfirmedEvent confirmed=awaitSyncedEvent(id,account,token);
+        Event target=confirmed.target();
+        JSONObject google=confirmed.remote();
         JSONArray links=google.optJSONArray("attachments");
         if(links==null)links=new JSONArray();
         String fileId=attachment.getString("id"), link=attachment.getString("url");
@@ -377,12 +401,18 @@ final class GoogleWorkAttachment {
             byte[] body=new JSONObject().put("attachments",writable).toString().getBytes(StandardCharsets.UTF_8);
             request("PATCH",target.url()+"?supportsAttachments=true",token,"application/json; charset=UTF-8",body,google.optString("etag"));
         }
+        storeCompletedAttachment(id,cached,attachedFiles,attachment);
+        return true;
+    }
+
+    private void storeCompletedAttachment(String id,JSONObject cached,JSONArray files,JSONObject attachment) throws Exception {
         boolean seen=false;
-        for(int i=0;i<attachedFiles.length();i++)
-            if(fileId.equals(attachedFiles.getJSONObject(i).optString("id")))seen=true;
-        if(!seen)attachedFiles.put(attachment);
+        for(int i=0;i<files.length();i++)
+            if(attachment.getString("id").equals(files.getJSONObject(i).optString("id")))seen=true;
+        if(!seen)files.put(attachment);
         cached.remove("pending");
-        storage().edit().putString(id,cached.put("files",attachedFiles).toString()).apply();
+        if(!storage().edit().putString(id,cached.put("files",files).toString()).commit())
+            throw new Failure("Файл сохранён на Диске. Не удалось сохранить результат операции.");
     }
 
     private static final class FileInfo {
@@ -577,6 +607,7 @@ final class GoogleWorkAttachment {
             int code=connection.getResponseCode();
             if(code==401||code==403)throw new Failure("Google отклонил доступ. Проверь разрешения Календаря и Диска.");
             if(code==412)throw new Failure("Событие изменилось во время загрузки. Нажми «Повторить прикрепление».");
+            if(code==404 && method.equals("GET"))throw new MissingEvent();
             if(code==404)throw new Failure("Событие ещё не найдено в Google Календаре. Повтори после синхронизации.");
             if(code<200||code>=300)throw new Failure("Google не принял запрос. Если файл загружен, воспользуйся повтором прикрепления.");
             return readJson(connection);

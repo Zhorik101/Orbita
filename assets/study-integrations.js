@@ -131,7 +131,10 @@ window.openStudyMaterialPicker=draft=>{
 };
 
 function studyDriveFiles(workId){
- try{return JSON.parse(window.OrbitaAndroid?.workAttachments?.(workId)||'{}').files||[]}catch{return []}
+ try{
+  const data=JSON.parse(window.OrbitaAndroid?.workAttachments?.(workId)||'{}');
+  return [...(data.files||[]),...(data.drivePending?[data.drivePending]:[])];
+ }catch{return []}
 }
 function cleanStudyDriveUrl(value){
  try{
@@ -170,6 +173,20 @@ window.showStudyAi=(task,ids=[],draft=null)=>{
   back.onclick=()=>restoreStudyDraft(draft);$('#study-ai-share').after(back);
  }
  const provider=$('#study-ai-provider'), mode=$('#study-ai-mode'), preview=$('#study-ai-text');
+ syncSdoFiles();
+ const attached=new Set([...(state.sdo.attachments[task.workId]||[]),...ids]);
+ const local=state.sdo.items.filter(file=>attached.has(file.id)&&file.document&&sdoDeviceFiles.has(file.id));
+ if(local.length&&window.OrbitaAndroid?.shareStudyFile){
+  const panel=document.createElement('section');
+  panel.innerHTML='<h3>Передать локальный файл</h3><p>Выбери один документ. В системном меню появятся приложения, которые принимают его формат. Если помощник не принимает вложение, скопируй запрос и добавь файл вручную.</p>';
+  for(const file of local){
+   const button=document.createElement('button');
+   button.type='button';button.textContent='Текст и файл: '+file.title;
+   button.onclick=()=>window.OrbitaAndroid.shareStudyFile(preview.value,file.id);
+   panel.append(button);
+  }
+  $('#study-ai-share').parentElement.after(panel);
+ }
  provider.value=readStudyLocal('orbita.studyAi')||'other';
  provider.onchange=()=>writeStudyLocal('orbita.studyAi',provider.value);
  mode.onchange=()=>{preview.value=studyPrompt(task,ids,mode.value)};
@@ -194,9 +211,9 @@ window.orbitaAttachmentResult=(id,message,trashed=false)=>{
  const job=activeStudySync;
  if(trashed||!job||job.workId!==id){studySyncInitialMessage?.(id,message,trashed);return}
  job.message=message;
- if(/^(Проверяем|Прикрепляем)/.test(message)){paintStudySync(job);return}
+ if(/^(Проверяем|Прикрепляем|Загружаем|Файл на Диске\. Ожидаем)/.test(message)){paintStudySync(job);return}
  job.running=false;
- if(message==='Файл прикреплён в Google Календаре.'){
+ if(message==='Файл прикреплён в Google Календаре.'||message==='Файл сохранён на Google Диске.'){
   job.completed.push(job.files[job.index]);
   job.index++;
   job.failed=false;
@@ -212,8 +229,8 @@ window.orbitaAttachmentResult=(id,message,trashed=false)=>{
 function runStudySync(job){
  if(job.running||job.index>=job.files.length)return;
  const task=state.tasks.find(row=>row.workId===job.workId);
- if(!task?.dueISO||!state.calendarAutoSync?.tasks){
-  job.message='Для вложений события укажи срок и включи синхронизацию задач.';
+ if(!task||(task.dueISO&&!state.calendarAutoSync?.tasks)){
+  job.message='Для вложений события включи синхронизацию задач.';
   paintStudySync(job);
   return;
  }
@@ -232,12 +249,15 @@ function runStudySync(job){
 function paintStudySync(job){
  const box=$('#study-sync-state');
  if(!box||box.dataset.work!==job.workId)return;
- $('#study-sync-files').textContent=job.completed.length+' из '+job.files.length;
+ let drivePending=false;
+ try{drivePending=!!JSON.parse(window.OrbitaAndroid?.workAttachments?.(job.workId)||'{}').drivePending}catch{}
+ $('#study-sync-files').textContent=Math.min(job.files.length,job.completed.length+Number(drivePending))+' из '+job.files.length;
+ $('#study-sync-event-files').textContent=job.driveOnly?'Без события':job.completed.length+' из '+job.files.length;
  $('#study-sync-message').textContent=job.message||'';
  $('#study-sync-start').disabled=job.running||job.index>=job.files.length;
  $('#study-sync-start').textContent=job.failed?'Повторить':job.index?'Продолжить':'Отправить файлы в Google';
  $('#study-sync-pause').hidden=!job.running;
- box.querySelector('[data-study-event]').textContent=job.completed.length?'Вложения подтверждены Google':
+ box.querySelector('[data-study-event]').textContent=job.driveOnly?'Без срока — событие не создаётся':job.completed.length?'Событие подтверждено Google':
   box.dataset.calendarEligible==='true'?'Событие обновляется через автосинхронизацию':'Нужны срок задачи и автосинхронизация';
 }
 window.showStudySync=task=>{
@@ -246,14 +266,15 @@ window.showStudySync=task=>{
  syncSdoFiles();
  const ids=(state.sdo.attachments[task.workId]||[]).filter(id=>sdoDeviceFiles.has(id));
  const saved=readStudyLocal(studySyncKey+':'+task.workId);
- const completed=saved?.workId===task.workId?(saved.completed||[]):[];
+ const driveOnly=!task.dueISO;
+ const completed=saved?.workId===task.workId&&!!saved.driveOnly===driveOnly?(saved.completed||[]):[];
  const pending=ids.filter(id=>!completed.includes(id));
  const job=activeStudySync?.running&&activeStudySync.workId===task.workId?activeStudySync:
-  {workId:task.workId,files:[...ids.filter(id=>completed.includes(id)),...pending],
+  {workId:task.workId,driveOnly,files:[...ids.filter(id=>completed.includes(id)),...pending],
    completed:ids.filter(id=>completed.includes(id)),index:ids.length-pending.length,
    failed:!!(saved?.workId===task.workId&&(saved.failed||saved.running)),running:false,message:''};
  activeStudySync=job;
- modal('<h2>Задача сохранена</h2><div id="study-sync-state"><p>Google Календарь: <span data-study-event></span></p><p>Файлы в библиотеке: '+ids.length+'</p><p>Диск и вложения события: <span id="study-sync-files"></span></p><p id="study-sync-message" role="status"></p><div class="work-chips"><button id="study-sync-start">Отправить файлы в Google</button><button id="study-sync-pause">Остановить после текущего</button><button id="study-sync-ai">Разобрать с ИИ</button></div></div>');
+ modal('<h2>Задача сохранена</h2><div id="study-sync-state"><p>Google Календарь: <span data-study-event></span></p><p>Файлы в библиотеке: '+ids.length+'</p><p>Google Диск: <span id="study-sync-files"></span></p><p>Вложения события: <span id="study-sync-event-files"></span></p><p id="study-sync-message" role="status"></p><div class="work-chips"><button id="study-sync-start">Отправить файлы в Google</button><button id="study-sync-pause">Остановить после текущего</button><button id="study-sync-ai">Разобрать с ИИ</button></div></div>');
  $('#study-sync-state').dataset.work=task.workId;
  $('#study-sync-state').dataset.calendarEligible=String(!!(task.dueISO&&state.calendarAutoSync?.tasks));
  $('#study-sync-start').onclick=()=>runStudySync(job);

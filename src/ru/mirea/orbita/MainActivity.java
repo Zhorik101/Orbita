@@ -228,7 +228,29 @@ public class MainActivity extends Activity {
                 startActivity(Intent.createChooser(send,"Поделиться учебной задачей"));
             });
         }
+        @JavascriptInterface public void shareStudyFile(String value,String id) {
+            if (!validSdoId(id) || value==null || value.length()>32000) return;
+            runOnUiThread(() -> {
+                Uri uri=sdoMaterials.attachmentUri(id);
+                if (uri==null) {
+                    android.widget.Toast.makeText(MainActivity.this,"Локальный файл недоступен.",android.widget.Toast.LENGTH_SHORT).show();
+                    return;
+                }
+                String mime=getContentResolver().getType(uri);
+                var send=new Intent(Intent.ACTION_SEND).setType(mime==null?"application/octet-stream":mime)
+                    .putExtra(Intent.EXTRA_TEXT,value).putExtra(Intent.EXTRA_STREAM,uri)
+                    .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                send.setClipData(android.content.ClipData.newUri(getContentResolver(),"Учебный файл",uri));
+                startActivity(Intent.createChooser(send,"Поделиться учебным файлом"));
+            });
+        }
         @JavascriptInterface public void openSdoPortal(String url) { launchSdoPortal(url,false,""); }
+        @JavascriptInterface public void resumeSdoScan(String resume) {
+            if (resume==null || resume.length()>100000)return;
+            runOnUiThread(() -> startActivityForResult(new Intent(MainActivity.this,SdoPortalActivity.class)
+                .putExtra("url","https://online-edu.mirea.ru/my/courses.php").putExtra("sync",true)
+                .putExtra("sdoResume",resume),SdoPortalActivity.REQUEST));
+        }
         @JavascriptInterface public void syncSdoPortal(String url) { launchSdoPortal(url,true,""); }
         @JavascriptInterface public void downloadSdoMaterial(String url,String id) {
             if (id == null || !id.matches("sdo_[a-f0-9]{32}")) return;
@@ -662,7 +684,7 @@ public class MainActivity extends Activity {
                 String payload = data.getStringExtra("sdoImport");
                 String url = SdoPortalLinks.bookmark(data.getStringExtra("sdoUrl"));
                 String title = data.getStringExtra("sdoTitle");
-                String script = payload != null && payload.length() <= 170000
+                String script = payload != null && payload.length() <= 275000
                     ? "window.orbitaSdoPortalImport?.(" + JSONObject.quote(payload) + ")"
                     : url.isEmpty() ? "" : "window.orbitaSdoPortalBookmark?.(" +
                         JSONObject.quote(url) + "," + JSONObject.quote(title == null ? "" : title) + ")";
