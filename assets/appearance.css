@@ -197,3 +197,5 @@ body.reference-ui{background:var(--bg)!important;color:var(--text)}.reference-ui
 .reference-ui .home-card[data-card="attendanceQr"] .home-qr-symbol{display:grid;flex:0 0 43px;width:43px;height:43px;place-items:center}
 .reference-ui .home-card[data-card="attendanceQr"] .home-qr-copy{flex:1;min-width:0}
 .reference-ui .home-card[data-card="attendanceQr"] .home-qr-arrow{display:flex;flex:0 0 22px;width:22px}
+
+.profile-recovery-notice{padding:12px 14px;margin:0 0 12px;border-radius:14px;border:1px solid var(--line);background:var(--panel);color:var(--text);font-size:13px;line-height:1.5}
