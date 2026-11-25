@@ -90,7 +90,7 @@ final class SdoMaterials {
     }
 
     void choose() {
-        if (busy) return;
+        if (busy || !exporting.isEmpty()) { finish("Дождись окончания текущей операции.", new JSONArray()); return; }
         try {
             activity.startActivityForResult(new Intent(Intent.ACTION_OPEN_DOCUMENT)
                 .setType("*/*").addCategory(Intent.CATEGORY_OPENABLE)
@@ -223,7 +223,7 @@ final class SdoMaterials {
             }
         }
         if (name == null) throw new ImportFailure("У файла нет названия.");
-        name = name.replaceAll("[/\\\\\\p{Cntrl}]", "_").trim();
+        name = name.replace('/', '_').replace('\\', '_').replaceAll("\\p{Cntrl}", "_").trim();
         int dot = name.lastIndexOf('.');
         String extension = dot > 0 ? name.substring(dot + 1).toLowerCase(Locale.ROOT) : "";
         if (!TYPES.containsKey(extension)) throw new ImportFailure("Формат файла не поддерживается.");
@@ -239,6 +239,9 @@ final class SdoMaterials {
                 size = copy(in, out, digest);
                 if (size <= 0 || expected >= 0 && size != expected) throw new ImportFailure("Файл пуст или прочитан не полностью.");
                 out.getFD().sync();
+            }
+            if (extension.equals("pdf") && !hasPdfHeader(temp)) {
+                throw new ImportFailure("Файл не похож на PDF. Проверь, что браузер сохранил сам документ.");
             }
             var hash = new StringBuilder();
             for (byte value : digest.digest()) hash.append(String.format(Locale.ROOT, "%02x", value & 255));
@@ -259,6 +262,14 @@ final class SdoMaterials {
             }
             return id;
         } finally { temp.delete(); }
+    }
+
+    private static boolean hasPdfHeader(File item) throws IOException {
+        try (var input = new FileInputStream(item)) {
+            byte[] prefix = new byte[1024];
+            int size = input.read(prefix);
+            return size > 0 && new String(prefix, 0, size, java.nio.charset.StandardCharsets.US_ASCII).contains("%PDF-");
+        }
     }
 
     private long copy(InputStream in, OutputStream out, MessageDigest digest) throws IOException {
