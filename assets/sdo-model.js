@@ -51,7 +51,7 @@ function cleanSdoProfile(value){
    source:input.source==='portal'?'portal':'manual',
    kind:courseUrl?'course':Object.hasOwn(sdoKinds,input.kind)&&input.kind!=='course'?input.kind:'other',
    section:typeof input.section==='string'?input.section.trim().slice(0,100):'',
-   discipline:sdoDiscipline(input.discipline),favorite:!!input.favorite,
+   discipline:sdoDiscipline(input.discipline),disciplineEdited:input.disciplineEdited===true,favorite:!!input.favorite,
    extension:sdoFilesTypes.has(input.extension)?input.extension:'',
    size:Number.isSafeInteger(input.size)&&input.size>0&&input.size<=104857600?input.size:0,
    updated:Number.isSafeInteger(input.updated)&&input.updated>=0?input.updated:0});
@@ -66,7 +66,7 @@ function cleanSdoProfile(value){
    if(valid.length)attachments[key]=valid;
   }
  }
- return {items,attachments};
+ return {items:repairLegacySdoCourseLinks(items),attachments};
 }
 function mergeSdoProfiles(current,incoming,allowedTaskIds){
  const saved=cleanSdoProfile(current),copy=cleanSdoProfile(incoming);
@@ -81,9 +81,34 @@ function mergeSdoProfiles(current,incoming,allowedTaskIds){
   assignmentId:remap.get(item.assignmentId)||item.assignmentId})),attachments});
 }
 
-function inferSdoDiscipline(title,courses){
- const normalize=value=>String(value||'').toLocaleLowerCase('ru').replaceAll('ё','е')
+function normalizeSdoTitle(value){
+ return String(value||'').toLocaleLowerCase('ru').replaceAll('ё','е')
   .replace(/[^\p{L}\p{N}]+/gu,' ').trim();
+}
+function repairLegacySdoCourseLinks(items){
+ const batches=new Map();
+ for(const item of items){
+  if(item.kind!=='course'||item.source!=='portal'||item.disciplineEdited||!item.updated||!item.discipline)continue;
+  const key=JSON.stringify([item.updated,item.discipline.term,item.discipline.id||normalizeSdoTitle(item.discipline.name)]);
+  const batch=batches.get(key)||[];
+  batch.push(item);
+  batches.set(key,batch);
+ }
+ const affected=new Set();
+ for(const batch of batches.values()){
+  const mismatches=new Set(batch.filter(item=>{
+   const title=normalizeSdoTitle(item.title);
+   const subject=normalizeSdoTitle(item.discipline.name);
+   return title!==subject&&!title.startsWith(subject+' ');
+  }).map(item=>normalizeSdoTitle(item.title)));
+  // The legacy bulk import reused both the timestamp and the active discipline.
+  if(mismatches.size>=2)for(const item of batch)affected.add(item.id);
+ }
+ return items.map(item=>affected.has(item.id)?{...item,discipline:null}:item);
+}
+
+function inferSdoDiscipline(title,courses){
+ const normalize=normalizeSdoTitle;
  const name=normalize(title);
  const matches=courses.map(sdoDiscipline).filter(course=>{
   if(!course)return false;

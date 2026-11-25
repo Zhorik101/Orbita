@@ -28,6 +28,17 @@ for(const file of ['sdo-model.js','profile-backup.js'])
  assert.equal(copy.sdo.items[0].url,url);
  assert.equal(copy.sdo.items[0].discipline.term,3);
  assert.equal(copy.sdo.items[1].extension,'pptx');
+ const wrong={id:'lang',term:3,name:'Иностранный язык'};
+ const legacyCourses=['Иностранный язык (английский)','Основы химической физики_Экзамен','Физика (часть 2)','Учебный отдел ИТХТ']
+  .map((title,i)=>({id:'sdo_'+String(i+3).repeat(32),title,url:'https://online-edu.mirea.ru/course/view.php?id='+String(91+i),
+   discipline:wrong,source:'portal',updated:1234,disciplineEdited:i===3}));
+ const migrated=ctx.cleanSdoProfile({items:[...legacyCourses,{...file,courseId:legacyCourses[1].id}],attachments:{work_1:[fileId]}});
+ assert.deepEqual(Array.from(migrated.items.slice(0,3),item=>item.discipline),[null,null,null]);
+ assert.equal(migrated.items[3].discipline.id,'lang');
+ assert.equal(migrated.items[4].courseId,legacyCourses[1].id);
+ assert.equal(migrated.attachments.work_1[0],fileId);
+ assert.equal(ctx.inferSdoDiscipline(migrated.items[2].title,[{id:'physics',name:'Физика',term:2}]).term,2);
+ assert.equal(ctx.inferSdoDiscipline(migrated.items[2].title,[{id:'physics',name:'Физика',term:2},{id:'physics',name:'Физика',term:3}]),null);
  const existing={tasks:[],notebooks:[],notes:{},sdo:{items:[{...course,id:copyId}],attachments:{}}};
  const restored=ctx.mergeProfileBackup(existing,copy,false);
  assert.equal(restored.sdo.items.length,2);

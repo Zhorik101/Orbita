@@ -45,6 +45,8 @@ function updateSdoItem(item){
 function sdoCourses(){return state.sdo.items.filter(item=>item.kind==='course')}
 function sdoDisciplineOf(item){
  const course=item.kind==='course'?item:sdoCourses().find(entry=>entry.id===item.courseId);
+ if(item.disciplineEdited)return item.discipline;
+ if(course?.disciplineEdited)return course.discipline;
  return item.discipline||course?.discipline||
   inferSdoDiscipline(course?.title||item.title,courseGradeResult?.courses||[]);
 }
@@ -73,7 +75,7 @@ window.orbitaSdoPortalBookmark=(url,title)=>{
  if(existing){toast('Ссылка уже сохранена в каталоге.');return}
  const kind=canonical.includes('/course/view.php?')?'course':
   canonical.includes('/mod/assign/view.php?')?'assignment':'material';
- editSdoItem(null,{kind,url:canonical,title:String(title||'').slice(0,180),discipline:sdoReturnDiscipline,
+ editSdoItem(null,{kind,url:canonical,title:String(title||'').slice(0,180),discipline:kind==='course'?null:sdoReturnDiscipline,
   courseId:kind==='course'?'':activeSdoCourse});
 };
 window.orbitaSdoPortalImport=json=>{
@@ -263,7 +265,7 @@ function paintSdo(){
   $('#sdo-clean-links')?.addEventListener('click',()=>{
    modal('<h2>Снять привязки к дисциплинам?</h2><p>Будут сброшены связи всех курсов, импортированных со страницы СДО. Курсы, файлы и задачи сохранятся.</p><button class="primary" id="sdo-confirm-clean">Снять привязки</button>');
    $('#sdo-confirm-clean').onclick=()=>{
-    const items=state.sdo.items.map(item=>item.kind==='course'&&item.source==='portal'?{...item,discipline:null}:item);
+    const items=state.sdo.items.map(item=>item.kind==='course'&&item.source==='portal'?{...item,discipline:null,disciplineEdited:false}:item);
     if(saveSdo({...state.sdo,items})){$('#modal').close();paintSdo()}
    };
   });
@@ -389,7 +391,7 @@ function editSdoItem(item,defaults={}){
   const selected=$('#sdo-edit-discipline').value;
   const next={...item,id:item?.id||sdoNewId('sdo_'),title,url,kind:$('#sdo-edit-kind')?.value||kind,
    courseId:$('#sdo-edit-course-id')?.value||'',assignmentId:$('#sdo-edit-assignment-id')?.value||'',section:$('#sdo-edit-section')?.value||'',
-   discipline:selected===''?null:choices[Number(selected)],favorite:$('#sdo-edit-favorite').checked,
+   discipline:selected===''?null:choices[Number(selected)],disciplineEdited:true,favorite:$('#sdo-edit-favorite').checked,
    updated:item?.updated||Date.now()};
   if(!updateSdoItem(next))return;
   $('#modal').close();
