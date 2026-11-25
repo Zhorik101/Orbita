@@ -9,16 +9,19 @@ import android.graphics.Color;
 import android.graphics.BitmapFactory;
 import android.graphics.Canvas;
 import android.graphics.Paint;
+import android.graphics.Matrix;
 import android.graphics.RectF;
 import android.graphics.Typeface;
 import android.graphics.SurfaceTexture;
 import android.hardware.Camera;
+import android.hardware.display.DisplayManager;
 import android.net.Uri;
 import android.os.Bundle;
 import android.view.Gravity;
 import android.view.ScaleGestureDetector;
 import android.view.View;
 import android.view.TextureView;
+import android.view.Surface;
 import android.view.SurfaceHolder;
 import android.view.SurfaceView;
 import android.widget.Button;
@@ -49,6 +52,15 @@ public final class AttendanceScannerActivity extends Activity implements Surface
     private FrameLayout cameraFrame;
     private boolean logicalRunning;
     private int displayedWidth, displayedHeight;
+    private ScannerPreviewGeometry.TextureTransform logicalTransform;
+    private final DisplayManager.DisplayListener displayListener = new DisplayManager.DisplayListener() {
+        @Override public void onDisplayAdded(int id) {}
+        @Override public void onDisplayRemoved(int id) {}
+        @Override public void onDisplayChanged(int id) {
+            var display = logicalPreview.getDisplay();
+            if (display != null && display.getDisplayId() == id) fitPreview();
+        }
+    };
     private TextView hint;
     private final List<Integer> rearCameras = new ArrayList<>();
     private int selectedCamera;
@@ -122,7 +134,7 @@ public final class AttendanceScannerActivity extends Activity implements Surface
         cameraFrame.addView(logicalPreview, new FrameLayout.LayoutParams(-1, -1, Gravity.CENTER));
         logicalPreview.setSurfaceTextureListener(new TextureView.SurfaceTextureListener() {
             @Override public void onSurfaceTextureAvailable(SurfaceTexture texture, int width, int height) {startPreview();}
-            @Override public void onSurfaceTextureSizeChanged(SurfaceTexture texture, int width, int height) {}
+            @Override public void onSurfaceTextureSizeChanged(SurfaceTexture texture, int width, int height) {fitPreview();}
             @Override public void onSurfaceTextureUpdated(SurfaceTexture texture) {}
             @Override public boolean onSurfaceTextureDestroyed(SurfaceTexture texture) {if(logicalRunning)stopPreview();return true;}
         });
@@ -277,6 +289,7 @@ public final class AttendanceScannerActivity extends Activity implements Surface
     @Override protected void onResume() {
         super.onResume();
         resumed = true;
+        getSystemService(DisplayManager.class).registerDisplayListener(displayListener, null);
         if (checkSelfPermission(Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED)
             permissionAction.setVisibility(View.GONE);
         startPreview();
@@ -284,6 +297,7 @@ public final class AttendanceScannerActivity extends Activity implements Surface
 
     @Override protected void onPause() {
         resumed = false;
+        getSystemService(DisplayManager.class).unregisterDisplayListener(displayListener);
         stopPreview();
         super.onPause();
     }
@@ -317,7 +331,6 @@ public final class AttendanceScannerActivity extends Activity implements Surface
         if (logicalCamera != null) {
             if (logicalRunning || !logicalPreview.isAvailable()) return;
             logicalRunning = true;
-            rotatedPreview = logicalCamera.orientation % 180 != 0;
             fitPreview();
             logicalCamera.open(logicalPreview.getSurfaceTexture(), new ScannerLogicalCamera.Client() {
                 @Override public void frame(byte[] data, int width, int height) {decodeFrame(data,width,height);}
@@ -375,18 +388,32 @@ public final class AttendanceScannerActivity extends Activity implements Surface
 
     private void fitPreview() {
         if (cameraFrame == null || cameraFrame.getWidth() <= 0 || cameraFrame.getHeight() <= 0) return;
-        if (logicalCamera == null && frameSize == null) return;
-        int width = logicalCamera == null ? frameSize.width : logicalCamera.frameSize.getWidth();
-        int height = logicalCamera == null ? frameSize.height : logicalCamera.frameSize.getHeight();
-        var size = ScannerPreviewGeometry.cover(width,height,cameraFrame.getWidth(),cameraFrame.getHeight(),rotatedPreview);
-        displayedWidth = size.width();
-        displayedHeight = size.height();
         if (logicalCamera == null) {
+            if (frameSize == null) return;
+            var size = ScannerPreviewGeometry.cover(frameSize.width, frameSize.height,
+                cameraFrame.getWidth(), cameraFrame.getHeight(), rotatedPreview);
+            displayedWidth = size.width();
+            displayedHeight = size.height();
             preview.setLayoutParams(new FrameLayout.LayoutParams(displayedWidth, displayedHeight, Gravity.CENTER));
-        } else {
-            logicalPreview.setLayoutParams(new FrameLayout.LayoutParams(rotatedPreview ? displayedHeight : displayedWidth, rotatedPreview ? displayedWidth : displayedHeight, Gravity.CENTER));
-            logicalPreview.setRotation(logicalCamera.orientation);
+            return;
         }
+
+        int width = logicalPreview.getWidth(), height = logicalPreview.getHeight();
+        var display = logicalPreview.getDisplay();
+        if (width <= 0 || height <= 0 || display == null) return;
+        int displayDegrees = switch (display.getRotation()) {
+            case Surface.ROTATION_90 -> 90;
+            case Surface.ROTATION_180 -> 180;
+            case Surface.ROTATION_270 -> 270;
+            default -> 0;
+        };
+        var frame = logicalCamera.frameSize;
+        logicalTransform = ScannerPreviewGeometry.textureTransform(frame.getWidth(), frame.getHeight(),
+            width, height, logicalCamera.orientation, displayDegrees);
+        Matrix matrix = new Matrix();
+        matrix.setScale(logicalTransform.scaleX(), logicalTransform.scaleY(), width / 2f, height / 2f);
+        matrix.postRotate(logicalTransform.rotation(), width / 2f, height / 2f);
+        logicalPreview.setTransform(matrix);
     }
 
     private void switchCamera() {
@@ -441,10 +468,12 @@ public final class AttendanceScannerActivity extends Activity implements Surface
 
     private void decodeFrame(byte[] data, int width, int height) {
         if (!resumed || scanAccepted) return;
-        if (data != null && data.length >= width * height && displayedWidth > 0 && displayedHeight > 0) {
+        boolean geometryReady = logicalRunning ? logicalTransform != null : displayedWidth > 0 && displayedHeight > 0;
+        if (data != null && data.length >= width * height && geometryReady) {
             try {
                 float target = finderSize();
-                var crop = ScannerPreviewGeometry.crop(width,height,
+                var crop = logicalRunning ? logicalTransform.crop(width, height, target)
+                    : ScannerPreviewGeometry.crop(width,height,
                     new ScannerPreviewGeometry.Size(displayedWidth,displayedHeight),target,rotatedPreview);
                 int cropWidth = crop.width(), cropHeight = crop.height();
                 var frame = new PlanarYUVLuminanceSource(data, width, height,
@@ -470,6 +499,7 @@ public final class AttendanceScannerActivity extends Activity implements Surface
     private void stopPreview() {
         if (logicalCamera != null && logicalRunning) logicalCamera.close();
         logicalRunning = false;
+        logicalTransform = null;
         Camera active = camera;
         camera = null;
         if (active != null) active.release();
