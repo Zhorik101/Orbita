@@ -25,6 +25,7 @@ function syncSdoFiles(ids=[],context=null){
  const added=[...sdoDeviceFiles.values()].filter(row=>!known.has(row.id)).map(row=>({
   id:row.id,title:row.name,kind:received.has(row.id)?context?.kind||'material':'material',
   discipline:received.has(row.id)?context?.discipline:null,courseId:received.has(row.id)?context?.courseId:'',
+  assignmentId:received.has(row.id)?context?.assignmentId:'',
   extension:row.extension,size:row.size,updated:row.updated
  }));
  if(added.length)saveSdo({...state.sdo,items:[...existing,...added]});
@@ -219,6 +220,7 @@ handleAppBack=function(){
 
 function editSdoItem(item,defaults={}){
  const entry=item||defaults,kind=entry.kind||'material';
+ const assignments=state.sdo.items.filter(row=>row.kind==='assignment'&&row.id!==item?.id);
  const choices=[];
  const offered=[entry.discipline,...(courseGradeResult?.courses||[]).map(course=>({id:course.id,name:course.name,term:course.term}))];
  for(const candidate of offered){
@@ -233,6 +235,8 @@ function editSdoItem(item,defaults={}){
   ${kind==='course'?'':`<label class="control-field">Тип <select id="sdo-edit-kind">${sdoOptions(Object.fromEntries(Object.entries(sdoKinds).filter(([key])=>key!=='course')),kind)}</select></label>
    <label class="control-field">Курс <select id="sdo-edit-course-id"><option value="">Без курса</option>${sdoCourses().map(row=>
     `<option value="${row.id}"${row.id===entry.courseId?' selected':''}>${safe(row.title)}</option>`).join('')}</select></label>
+   ${kind!=='assignment'&&assignments.length?`<label class="control-field">Задание <select id="sdo-edit-assignment-id"><option value="">Без задания</option>
+    ${assignments.map(row=>`<option value="${row.id}"${row.id===entry.assignmentId?' selected':''}>${safe(row.title)}</option>`).join('')}</select></label>`:''}
    <label class="control-field">Раздел курса <input id="sdo-edit-section" maxlength="100" value="${safe(item?.section||'')}"></label>`}
   <label class="control-field">Дисциплина <select id="sdo-edit-discipline"><option value="">Без привязки</option>
    ${choices.map((course,index)=>`<option value="${index}"${sameSdoDiscipline(course,entry.discipline)?' selected':''}>${safe(course.name)}${course.term?' · '+course.term+' семестр':''}</option>`).join('')}</select></label>
@@ -252,7 +256,7 @@ function editSdoItem(item,defaults={}){
   }
   const selected=$('#sdo-edit-discipline').value;
   const next={...item,id:item?.id||sdoNewId('sdo_'),title,url,kind:$('#sdo-edit-kind')?.value||kind,
-   courseId:$('#sdo-edit-course-id')?.value||'',section:$('#sdo-edit-section')?.value||'',
+   courseId:$('#sdo-edit-course-id')?.value||'',assignmentId:$('#sdo-edit-assignment-id')?.value||'',section:$('#sdo-edit-section')?.value||'',
    discipline:selected===''?null:choices[Number(selected)],favorite:$('#sdo-edit-favorite').checked,
    updated:item?.updated||Date.now()};
   if(!updateSdoItem(next))return;
@@ -264,8 +268,10 @@ function editSdoItem(item,defaults={}){
  if(remove)remove.onclick=()=>{
   modal('<h2>Убрать сохранённую ссылку?</h2><p>Локальные документы курса останутся в библиотеке.</p><button id="sdo-confirm-link" class="primary">Убрать ссылку</button>');
   $('#sdo-confirm-link').onclick=()=>{
-   const items=state.sdo.items.filter(row=>row.id!==item.id).map(row=>row.courseId===item.id
-    ?{...row,courseId:'',discipline:row.discipline||item.discipline}:row);
+   const items=state.sdo.items.filter(row=>row.id!==item.id).map(row=>{
+    if(row.courseId===item.id)return {...row,courseId:'',discipline:row.discipline||item.discipline};
+    return row.assignmentId===item.id?{...row,assignmentId:''}:row;
+   });
    if(!saveSdo({...state.sdo,items}))return;
    if(activeSdoCourse===item.id)activeSdoCourse='';
    $('#modal').close();paintSdo();window.paintDiscipline?.();
@@ -308,6 +314,7 @@ function openSdoMaterial(item){
 }
 function showSdoItem(item){
  const file=sdoDeviceFiles.get(item.id);
+ const files=state.sdo.items.filter(row=>row.assignmentId===item.id);
  const tasks=state.tasks.filter(task=>task.workId&&!task.done);
  const linked=state.tasks.some(task=>(state.sdo.attachments[task.workId]||[]).includes(item.id));
  modal(`<h2>${safe(item.title)}</h2><p>${safe(sdoItemText(item))}</p>${item.section?`<p>${safe(item.section)}</p>`:''}
@@ -315,13 +322,25 @@ function showSdoItem(item){
   ${item.document?file?'<button type="button" id="sdo-open-file">Открыть офлайн</button><button type="button" id="sdo-export-file">Экспорт файла</button><button type="button" id="sdo-remove-file">Удалить локальную копию</button>':
    '<p>Файл не входит в JSON-копию. Импортируй его с устройства, чтобы восстановить открытие.</p>':sdoExternal(item.url,'Открыть оригинал в СДО')}
   <button type="button" id="sdo-edit-item">Изменить</button>
-  ${item.kind==='assignment'?`<button type="button" id="sdo-new-task">${linked?'Открыть связанную задачу':'Создать личную задачу'}</button>`:''}</div>
+  ${item.kind==='assignment'?`<button type="button" id="sdo-new-task">${linked?'Открыть связанную задачу':'Создать личную задачу'}</button>
+   ${window.OrbitaAndroid?.importSdoFiles?'<button type="button" id="sdo-import-assignment">Импортировать вложения задания</button>':''}`:''}</div>
+  ${files.length?`<h3>Материалы задания</h3>${files.map(row=>`<button type="button" class="sdo-item-title" data-assignment-material="${row.id}">${safe(row.title)}</button>`).join('')}`:''}
   ${tasks.length?`<label class="control-field">Личная задача <select id="sdo-task-choice">${tasks.map((task,i)=>
    `<option value="${i}">${safe(task.text)}</option>`).join('')}</select></label>
    <button type="button" id="sdo-link-task">Привязать к задаче</button>`:''}`);
  $('#sdo-edit-item').onclick=()=>editSdoItem(item);
  const taskButton=$('#sdo-new-task');
  if(taskButton)taskButton.onclick=()=>newSdoTask(item);
+ const importAssignment=$('#sdo-import-assignment');
+ if(importAssignment)importAssignment.onclick=()=>{
+  $('#modal').close();
+  if(page!=='mini-sdo')window.openSdo(sdoDisciplineOf(item),item.courseId);
+  startSdoImport({assignmentId:item.id,courseId:item.courseId,discipline:sdoDisciplineOf(item)});
+ };
+ $$('[data-assignment-material]').forEach(button=>button.onclick=()=>{
+  const material=files.find(row=>row.id===button.dataset.assignmentMaterial);
+  if(material)showSdoItem(material);
+ });
  if(file){
   $('#sdo-open-file').onclick=()=>openSdoMaterial(item);
   $('#sdo-export-file').onclick=()=>window.OrbitaAndroid?.exportSdoFile?.(item.id);

@@ -43,6 +43,7 @@ function cleanSdoProfile(value){
   const courseUrl=url.includes('/course/view.php?');
   const courseId=typeof input.courseId==='string'&&/^sdo_[a-f0-9]{32}$/.test(input.courseId)?input.courseId:'';
   items.push({id:input.id,title,url,document,courseId,
+   assignmentId:typeof input.assignmentId==='string'&&/^sdo_[a-f0-9]{32}$/.test(input.assignmentId)?input.assignmentId:'',
    kind:courseUrl?'course':Object.hasOwn(sdoKinds,input.kind)&&input.kind!=='course'?input.kind:'other',
    section:typeof input.section==='string'?input.section.trim().slice(0,100):'',
    discipline:sdoDiscipline(input.discipline),favorite:!!input.favorite,
@@ -71,5 +72,6 @@ function mergeSdoProfiles(current,incoming,allowedTaskIds){
  for(const [task,list] of Object.entries(copy.attachments)){
   if(allowedTaskIds.has(task))attachments[task]=[...new Set([...(attachments[task]||[]),...list.map(id=>remap.get(id)||id)])];
  }
- return cleanSdoProfile({items:items.map(item=>remap.has(item.courseId)?{...item,courseId:remap.get(item.courseId)}:item),attachments});
+ return cleanSdoProfile({items:items.map(item=>({...item,courseId:remap.get(item.courseId)||item.courseId,
+  assignmentId:remap.get(item.assignmentId)||item.assignmentId})),attachments});
 }
