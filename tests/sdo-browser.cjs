@@ -179,6 +179,19 @@ const {chromium}=require('playwright');
    ]}));
   });
   assert.match(await page.locator('#modal').innerText(),/Лекция без курса/);
+  await page.evaluate(id=>{
+   const task=state.tasks.find(row=>state.sdo.attachments[row.workId]?.includes(id));
+   const anchor=document.createElement('div');
+   anchor.id='attachment-fixture';
+   document.body.append(anchor);
+   window.addSdoTaskLinks(task,anchor);
+  },downloaded);
+  const attachments=page.locator('body > .sdo-task-attachments');
+  assert.match(await attachments.innerText(),/Lab.pdf/);
+  assert.equal(await attachments.locator('select').count(),0);
+  await attachments.getByRole('button',{name:'Убрать связь'}).evaluate(button=>button.click());
+  assert.equal(await attachments.count(),0);
+  assert(await page.evaluate(id=>state.sdo.items.some(row=>row.id===id),downloaded));
   assert.deepEqual(errors,[]);
   console.log('PASS saved SDO links, manual course structure, task linking, import cancellation, offline bridge, profile and mobile UI');
  }finally{await browser.close()}

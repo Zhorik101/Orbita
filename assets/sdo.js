@@ -498,27 +498,23 @@ function showSdoItem(item){
 }
 
 window.addSdoTaskLinks=(task,anchor)=>{
- syncSdoFiles();
- const items=state.sdo.items.filter(item=>item.kind!=='course');
+ const linked=state.sdo.attachments[task.workId]||[];
+ const items=state.sdo.items.filter(item=>item.kind!=='course'&&linked.includes(item.id));
  if(!items.length)return;
+ syncSdoFiles();
  const area=document.createElement('section');
  area.className='sdo-task-attachments';
  anchor.before(area);
- function render(){
-  const linked=state.sdo.attachments[task.workId]||[];
-  const free=items.filter(item=>!linked.includes(item.id));
-  area.innerHTML=`<h3>Учебные материалы</h3>
-   ${items.filter(item=>linked.includes(item.id)).map(item=>`<div class="sdo-task-item">
-    <button type="button" data-open="${item.id}">${safe(item.title)}${item.document&&!sdoDeviceFiles.has(item.id)?' · нет копии':''}</button>
-    <button type="button" data-remove="${item.id}" aria-label="Убрать связь">×</button></div>`).join('')}
-   ${free.length?`<label class="control-field">Добавить материал <select>${free.map((item,i)=>`<option value="${i}">${safe(item.title)}</option>`).join('')}</select></label>
-    <button type="button" data-attach>Прикрепить</button>`:''}`;
-  area.querySelectorAll('[data-open]').forEach(button=>button.onclick=()=>openSdoMaterial(items.find(item=>item.id===button.dataset.open)));
-  area.querySelectorAll('[data-remove]').forEach(button=>button.onclick=()=>{if(setSdoAttachment(task.workId,button.dataset.remove,false))render()});
-  const attach=area.querySelector('[data-attach]');
-  if(attach)attach.onclick=()=>{if(setSdoAttachment(task.workId,free[Number(area.querySelector('select').value)].id))render()};
- }
- render();
+ area.innerHTML=`<h3>Учебные материалы</h3>
+  ${items.map(item=>`<div class="sdo-task-item">
+   <button type="button" data-open="${item.id}">${safe(item.title)}${item.document&&!sdoDeviceFiles.has(item.id)?' · нет копии':''}</button>
+   <button type="button" data-remove="${item.id}" aria-label="Убрать связь">×</button></div>`).join('')}`;
+ area.querySelectorAll('[data-open]').forEach(button=>button.onclick=()=>openSdoMaterial(items.find(item=>item.id===button.dataset.open)));
+ area.querySelectorAll('[data-remove]').forEach(button=>button.onclick=()=>{
+  if(!setSdoAttachment(task.workId,button.dataset.remove,false))return;
+  button.closest('.sdo-task-item').remove();
+  if(!area.querySelector('.sdo-task-item'))area.remove();
+ });
 };
 window.sdoDisciplinePanel=course=>{
  syncSdoFiles();
