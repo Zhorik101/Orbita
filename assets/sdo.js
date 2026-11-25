@@ -203,8 +203,9 @@ function paintSdo(){
  const root=$('#sdo-content');
  if(course){
   const positions=state.sdo.items.filter(item=>item.courseId===course.id);
+  const folders=new Set(positions.filter(item=>item.kind==='folder').map(item=>item.id));
   const views={overview:'Обзор',assignments:'Задания',materials:'Материалы',progress:'Прогресс'};
-  const items=positions.filter(item=>sdoCourseTab==='assignments'?item.kind==='assignment':
+  const items=positions.filter(item=>item.document||!folders.has(item.assignmentId)).filter(item=>sdoCourseTab==='assignments'?item.kind==='assignment':
    sdoCourseTab==='materials'?item.kind!=='assignment':true);
   root.innerHTML=`<section class="course-discipline sdo-toolbar"><p>${safe(sdoItemText(course))}</p>
    <p>Условия, оценки и статусы проверки открываются на официальной странице.</p>

@@ -155,6 +155,7 @@ const {chromium}=require('playwright');
   assert.match(await page.locator('#sdo-content').innerText(),/Файл второго курса/);
   assert.equal(await page.locator('a[href$="id=22"]').getAttribute('href'),
    'https://online-edu.mirea.ru/mod/resource/view.php?id=22');
+  assert.equal(await page.locator('#sdo-content').getByText('Работа из папки',{exact:true}).count(),0);
   await page.getByRole('button',{name:/Папка работ/}).click();
   await page.getByRole('link',{name:/Скачать «Работа из папки»/}).click();
   const download=await page.evaluate(()=>window.downloadCall);

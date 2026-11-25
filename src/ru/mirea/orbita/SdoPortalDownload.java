@@ -46,7 +46,8 @@ final class SdoPortalDownload {
                     .replace('/','_').replace('\\','_').replaceAll("\\p{Cntrl}","_");
                 String documentMime=type(name);
                 if (documentMime.isEmpty() || !mime.equals(documentMime) && !mime.equals("application/octet-stream")
-                    && !mime.equals("binary/octet-stream") && !mime.equals("application/x-zip-compressed")) throw new IOException();
+                    && !mime.equals("binary/octet-stream") && !mime.equals("application/x-zip-compressed")
+                    && !stlMime(documentMime,mime)) throw new IOException();
                 if (name.length()>160) name=name.substring(0,150)+name.substring(name.lastIndexOf('.'));
                 long expected=connection.getContentLengthLong();
                 if (expected>MAX || cache.getUsableSpace()<Math.max(expected,0)+8388608L) throw new IOException();
@@ -75,6 +76,7 @@ final class SdoPortalDownload {
             case "doc" -> "application/msword";
             case "ppt" -> "application/vnd.ms-powerpoint";
             case "txt" -> "text/plain";
+            case "stl" -> "model/stl";
             case "zip" -> "application/zip";
             case "rar" -> "application/vnd.rar";
             case "7z" -> "application/x-7z-compressed";
@@ -82,18 +84,35 @@ final class SdoPortalDownload {
         };
     }
 
-    private static boolean matchingHeader(File file,String mime) throws IOException {
+    private static boolean stlMime(String expected,String actual) {
+        return expected.equals("model/stl") && (actual.equals("application/sla")
+            || actual.equals("application/vnd.ms-pki.stl") || actual.equals("application/x-stl")
+            || actual.equals("text/plain"));
+    }
+
+    static boolean matchingHeader(File file,String mime) throws IOException {
         try(var in=new java.io.FileInputStream(file)) {
             byte[] bytes=new byte[1024];
             int size=in.read(bytes);
             if(size<1)return false;
             String prefix=new String(bytes,0,size,java.nio.charset.StandardCharsets.US_ASCII);
+            if(mime.equals("model/stl"))return stlHeader(bytes,size,file.length(),prefix);
             if(mime.equals("application/pdf"))return prefix.contains("%PDF-");
             if(mime.contains("openxmlformats")||mime.equals("application/zip"))return prefix.startsWith("PK");
             String text=prefix.trim().toLowerCase(Locale.ROOT);
             return !text.startsWith("<!doctype html")&&!text.startsWith("<html")&&!text.startsWith("<form");
         }
     }
+    private static boolean stlHeader(byte[] bytes,int count,long length,String prefix) {
+        if (count>=84) {
+            long triangles=Integer.toUnsignedLong(java.nio.ByteBuffer.wrap(bytes,80,4)
+                .order(java.nio.ByteOrder.LITTLE_ENDIAN).getInt());
+            if (triangles>0 && length==84+50*triangles) return true;
+        }
+        String text=prefix.trim().toLowerCase(Locale.ROOT);
+        return text.startsWith("solid") && text.contains("facet normal") && text.contains("vertex");
+    }
+
     static long copy(InputStream in,OutputStream out,BooleanSupplier cancelled) throws IOException {
         var buffer=new byte[32768];
         long seen=0;

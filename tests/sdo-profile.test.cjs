@@ -20,6 +20,7 @@ for(const file of ['sdo-model.js','profile-backup.js'])
  assert.equal(ctx.inferSdoDiscipline('Химия и физика',[discipline,{id:'chem-phys',term:3,name:'Химия и физика'}]).id,'chem-phys');
  const course={id:courseId,title:'Органическая химия',url:url+'&token=SECRET',discipline};
  const file={id:fileId,title:'Практика.pptx',extension:'pptx',size:2048,courseId,sourceUri:'content://SECRET'};
+ assert.equal(ctx.cleanSdoProfile({items:[{...file,extension:'stl'}]}).items[0].extension,'stl');
  const task={workId:'work_1',text:'Подготовиться',subject:'Химия',done:false};
  const profile={tasks:[task],sdo:{items:[course,file],attachments:{work_1:[fileId,fileId]},cookie:'SECRET'}};
  const json=await ctx.createProfileBackup(profile);

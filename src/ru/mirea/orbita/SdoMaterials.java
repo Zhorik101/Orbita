@@ -37,6 +37,7 @@ final class SdoMaterials {
         TYPES.put("pptx", "application/vnd.openxmlformats-officedocument.presentationml.presentation");
         TYPES.put("xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
         TYPES.put("txt", "text/plain");
+        TYPES.put("stl", "model/stl");
         TYPES.put("zip", "application/zip");
         TYPES.put("rar", "application/vnd.rar");
         TYPES.put("7z", "application/x-7z-compressed");
@@ -292,6 +293,9 @@ final class SdoMaterials {
             }
             if (extension.equals("pdf") && !hasPdfHeader(temp)) {
                 throw new ImportFailure("Файл не похож на PDF. Проверь, что браузер сохранил сам документ.");
+            }
+            if (extension.equals("stl") && !SdoPortalDownload.matchingHeader(temp,"model/stl")) {
+                throw new ImportFailure("Файл не похож на модель STL.");
             }
             var hash = new StringBuilder();
             for (byte value : digest.digest()) hash.append(String.format(Locale.ROOT, "%02x", value & 255));

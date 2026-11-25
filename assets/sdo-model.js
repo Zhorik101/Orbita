@@ -4,7 +4,7 @@ const sdoKinds={course:'Курс',assignment:'Задание',lecture:'Лекц�
  practice:'Практическая',material:'Материал',lesson:'Урок',quiz:'Тест',forum:'Форум',page:'Страница',folder:'Папка',link:'Учебная ссылка',other:'Прочее'};
 const sdoDocumentId=/^[a-f0-9]{64}$/;
 const sdoRecordId=/^(?:[a-f0-9]{64}|sdo_[a-f0-9]{32})$/;
-const sdoFilesTypes=new Set(['pdf','docx','pptx','xlsx','txt','zip','rar','7z','doc','ppt']);
+const sdoFilesTypes=new Set(['pdf','docx','pptx','xlsx','txt','zip','rar','7z','doc','ppt','stl']);
 
 function canonicalSdoLink(value){
  if(typeof value!=='string'||value.length>2000)return '';
