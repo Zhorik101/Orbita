@@ -1,3 +1,4 @@
+const sdoResumeKey='orbita.sdoResume';
 const sdoPortal='https://online-edu.mirea.ru/';
 const sdoCatalog=createMiniPage('mini-sdo',`
  <button class="mini-back" id="sdo-back">← Мини-приложения</button>
@@ -83,13 +84,16 @@ window.orbitaSdoPortalImport=json=>{
  try{payload=JSON.parse(json)}catch{return}
  const batch=Array.isArray(payload?.pages);
  const pages=batch?payload.pages.slice(0,121):[payload];
+ if(batch&&Array.isArray(payload.resume)){
+  try{localStorage.setItem(sdoResumeKey,JSON.stringify(payload.resume.slice(0,500)))}catch{}
+ }
  if(!batch&&!Array.isArray(payload?.links))return;
  const items=[...state.sdo.items];
  const seen=new Map(items.filter(item=>item.url).map(item=>[item.url,item]));
  const now=Date.now();
- function add(url,title,kind,courseId='',section='',assignmentId=''){
+ function add(url,title,kind,courseId='',section='',assignmentId='',moodleCourse=''){
   if(!url||seen.has(url)||items.length>=sdoCatalogLimit||typeof title!=='string'||!title.trim())return null;
-  const item={id:sdoNewId('sdo_'),url,title,kind,courseId,section,assignmentId,source:'portal',updated:now,
+  const item={id:sdoNewId('sdo_'),url,title:sdoDisplayTitle(title,kind,true),kind,courseId,section,assignmentId,moodleCourse,source:'portal',updated:now,
    discipline:null};
   seen.set(url,item);items.push(item);
   return item;
@@ -116,15 +120,17 @@ window.orbitaSdoPortalImport=json=>{
     const courseId=course?.id||parent.courseId;
     const path=new URL(url).pathname;
     const module=path.split('/')[2];
-    if(path.startsWith('/pluginfile.php/')){
-     const existing=seen.get(url);
-     if(existing&&parent&&!existing.assignmentId&&existing.courseId===courseId){
-      const updated={...existing,assignmentId:parent.id,section:row.section||parent.section||existing.section};
-      items[items.indexOf(existing)]=updated;
-      seen.set(url,updated);
-     }else add(url,row.title,'material',courseId,row.section||parent?.section||'',parent?.id||'');
-    }
-    else if(course&&path.startsWith('/mod/'))add(url,row.title,types[module]||'other',course.id,row.section);
+    const file=path.startsWith('/pluginfile.php/');
+    if(!file&&(!course||!path.startsWith('/mod/')))continue;
+    const existing=seen.get(url);
+    if(existing&&existing.source==='portal'){
+     const next={...existing,courseId:courseId||existing.courseId,moodleCourse:portalCourse||existing.moodleCourse,
+      assignmentId:parent?.id||existing.assignmentId,section:row.section||parent?.section||existing.section};
+     if(next.courseId!==existing.courseId||next.moodleCourse!==existing.moodleCourse||
+        next.assignmentId!==existing.assignmentId||next.section!==existing.section){
+      items[items.indexOf(existing)]=next;seen.set(url,next);
+     }
+    }else if(!existing)add(url,row.title,file?'material':types[module]||'other',courseId,row.section||parent?.section||'',parent?.id||'',portalCourse);
    }else if(!portalCourse&&url.includes('/course/view.php?'))add(url,row.title,'course');
   }
  }
@@ -183,7 +189,7 @@ function sdoDownloadLink(item,text='Скачать',label=text){
 }
 function sdoItemHtml(item){
  return `<article class="course-discipline sdo-item">
-  <button type="button" class="sdo-item-title" data-sdo-item="${item.id}">${safe(item.title)} ${courseChevron()}</button>
+  <button type="button" class="sdo-item-title" data-sdo-item="${item.id}">${safe(sdoDisplayTitle(item.title,item.kind,item.source==='portal'))} ${courseChevron()}</button>
   ${sdoDownloadable(item)?sdoDownloadLink(item):''}
   <p>${safe(sdoItemText(item))}</p></article>`;
 }
@@ -230,6 +236,8 @@ function paintSdo(){
   root.querySelectorAll('[data-sdo-add]').forEach(button=>button.onclick=()=>editSdoItem(null,{courseId:course.id,kind:button.dataset.sdoAdd}));
  }else{
   const context=sdoReturnDiscipline;
+  let resume='[]';
+  try{resume=localStorage.getItem(sdoResumeKey)||'[]'}catch{}
   const all=context?sdoItemsForDiscipline(context):state.sdo.items;
   const subjects=[...new Set(all.map(item=>sdoDisciplineOf(item)?.name).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'ru'));
   if(sdoSubject&&!subjects.includes(sdoSubject))sdoSubject='';
@@ -238,6 +246,7 @@ function paintSdo(){
    <p>${context?safe(context.name):'Курсы и задания открываются на официальном портале МИРЭА.'}</p>
    <p>«Обновить из СДО» собирает ссылки из видимых курсов. Файлы скачиваются по нажатию.</p>
    <div class="work-chips">${sdoPortalActions()}${window.OrbitaAndroid?.syncSdoPortal?'<button type="button" id="sdo-sync-portal">Обновить из СДО</button>':''}
+   ${resume!=='[]'&&window.OrbitaAndroid?.resumeSdoScan?'<button type="button" id="sdo-resume-scan">Продолжить сканирование</button>':''}
    <button type="button" id="sdo-refresh">Обновить локальные файлы</button>
    <button type="button" data-sdo-add="course">+ Курс</button><button type="button" data-sdo-add="assignment">+ Задание</button>
    <button type="button" data-sdo-add="material">+ Ссылка</button>
@@ -266,6 +275,7 @@ function paintSdo(){
   $('#sdo-sort').onchange=event=>{sdoSort=event.target.value;list()};
   const subject=$('#sdo-subject');
   if(subject)subject.onchange=()=>{sdoSubject=subject.value===''?'':subjects[Number(subject.value)];list()};
+  $('#sdo-resume-scan')?.addEventListener('click',()=>window.OrbitaAndroid.resumeSdoScan(resume));
   $('#sdo-sync-portal')?.addEventListener('click',()=>window.OrbitaAndroid.syncSdoPortal(sdoPortal+'my/courses.php'));
   $('#sdo-clean-links')?.addEventListener('click',()=>{
    modal('<h2>Снять привязки к дисциплинам?</h2><p>Будут сброшены связи всех курсов, импортированных со страницы СДО. Курсы, файлы и задачи сохранятся.</p><button class="primary" id="sdo-confirm-clean">Снять привязки</button>');
@@ -330,24 +340,15 @@ window.orbitaSdoDownloaded=(sourceId,id)=>{
  const item=state.sdo.items.find(entry=>entry.id===id);
  if(window.finishStudyDownload?.(sourceId,id))return;
  const discipline=sdoDisciplineOf(item);
- const tasks=state.tasks.filter(task=>task.workId&&!task.done)
-  .sort((left,right)=>Number(right.subject===discipline?.name)-Number(left.subject===discipline?.name));
+
  modal(`<h2>Файл скачан</h2><p>${safe(item.title)}</p>
    <p>${discipline?safe(discipline.name):'Дисциплину можно выбрать в библиотеке.'}</p>
    <div class="work-chips"><button id="sdo-save-downloads" type="button">Сохранить в «Загрузки»</button>
    <button id="sdo-create-file-task" type="button">Создать задачу с файлом</button></div>
-   ${tasks.length?`<label class="control-field">Задача <select id="sdo-download-task">${tasks.map((task,i)=>
-    `<option value="${i}">${safe(task.text)}</option>`).join('')}</select></label>
-    <button type="button" id="sdo-attach-download">${state.calendarAutoSync?.tasks&&window.OrbitaAndroid?.attachSdoWorkFile?'Прикрепить и синхронизировать':'Прикрепить к задаче'}</button>`:''}`);
+   <div id="sdo-pick-task"></div>`);
  $('#sdo-save-downloads').onclick=()=>window.OrbitaAndroid?.saveSdoToDownloads?.(id);
- $('#sdo-create-file-task').onclick=()=>newSdoTask(item);
- $('#sdo-attach-download')?.addEventListener('click',()=>{
-  const task=tasks[Number($('#sdo-download-task').value)];
-  if(task&&setSdoAttachment(task.workId,id)){
-   $('#modal').close();toast('Файл прикреплён к задаче');
-   if(state.calendarAutoSync?.tasks)sendSdoFileToCalendar(task,id);
-  }
- });
+ $('#sdo-create-file-task').onclick=()=>openSdoTaskDraft(item);
+ paintSdoTaskChoice($('#sdo-pick-task'),item,true);
 };
 
 const pageBeforeSdo=showPage;
@@ -460,12 +461,51 @@ function openSdoMaterial(item){
  }else if(window.OrbitaAndroid?.openSdoPortal)window.OrbitaAndroid.openSdoPortal(item.url);
  else window.location.href=item.url;
 }
+function openSdoTaskDraft(item){
+ const linked=state.tasks.find(task=>(state.sdo.attachments[task.workId]||[]).includes(item.id)&&!task.done);
+ if(linked){addTask(null,{workId:linked.workId});return}
+ const title=readableSdoFile(item.title);
+ const kind=/^лб[_\s-]/i.test(item.title)?'Лабораторная':'Подготовка';
+ addTask(null,{draft:{title,kind,subject:sdoDisciplineOf(item)?.name||'Личное',fileIds:[item.id]}});
+}
+function paintSdoTaskChoice(root,item,send){
+ const subject=normalizeSdoTitle(sdoDisciplineOf(item)?.name);
+ const all=state.tasks.filter(task=>task.workId&&!task.done);
+ const matching=subject?all.filter(task=>normalizeSdoTitle(task.subject)===subject):[];
+ let showAll=false, selected='';
+ function paint(){
+  const tasks=showAll?[...matching,...all.filter(task=>!matching.includes(task))]:matching;
+  root.innerHTML=`${tasks.length?`<label class="control-field">Личная задача <select><option value="">Выбери задачу</option>
+   ${tasks.map(task=>`<option value="${safe(task.workId)}">${safe(task.text)} · ${safe(task.subject)}</option>`).join('')}</select></label>
+   <button type="button" data-attach-task>Прикрепить к задаче</button>`:'<p>По этой дисциплине нет открытых задач.</p>'}
+   ${!showAll&&all.length>matching.length?'<button type="button" data-all-tasks>Показать все задачи</button>':''}
+   ${!send&&!matching.length&&item.kind!=='assignment'?'<button type="button" data-create-task>Создать задачу</button>':''}`;
+  const select=root.querySelector('select');
+  if(select){
+   select.value=selected;
+   const attach=root.querySelector('[data-attach-task]');
+   attach.disabled=!select.value;
+   select.onchange=()=>{selected=select.value;attach.disabled=!selected};
+   attach.onclick=()=>{
+    const task=tasks.find(row=>row.workId===selected);
+    if(!task||!setSdoAttachment(task.workId,item.id))return;
+    toast('Материал прикреплён к задаче');
+    if(send){
+     $('#modal').close();
+     if(state.calendarAutoSync?.tasks)sendSdoFileToCalendar(task,item.id);
+    }
+   };
+  }
+  root.querySelector('[data-all-tasks]')?.addEventListener('click',()=>{showAll=true;paint()});
+  root.querySelector('[data-create-task]')?.addEventListener('click',()=>openSdoTaskDraft(item));
+ }
+ paint();
+}
 function showSdoItem(item){
  const file=sdoDeviceFiles.get(item.id);
  const files=state.sdo.items.filter(row=>row.assignmentId===item.id);
- const tasks=state.tasks.filter(task=>task.workId&&!task.done);
  const linked=state.tasks.some(task=>(state.sdo.attachments[task.workId]||[]).includes(item.id));
- modal(`<h2>${safe(item.title)}</h2><p>${safe(sdoItemText(item))}</p>${item.section?`<p>${safe(item.section)}</p>`:''}
+ modal(`<h2>${safe(sdoDisplayTitle(item.title,item.kind,item.source==='portal'))}</h2><p>${safe(sdoItemText(item))}</p>${item.section?`<p>${safe(item.section)}</p>`:''}
   ${item.description?`<details><summary>Условие из СДО</summary><p class="sdo-assignment-description">${safe(item.description)}</p></details>`:''}
   <div class="work-chips">
   ${item.document?file?'<button type="button" id="sdo-open-file">Открыть офлайн</button><button type="button" id="sdo-export-file">Экспорт файла</button><button type="button" id="sdo-remove-file">Удалить локальную копию</button>':
@@ -481,9 +521,8 @@ function showSdoItem(item){
       sdoDownloadLink(row,'Скачать','Скачать «'+row.title+'»'):
       `<button type="button" data-assignment-material="${row.id}">Открыть</button>`}</li>`).join('')}</ul>`:''}
   ${item.kind==='folder'&&!files.length?'<p>Список файлов ещё не загружен. Нажми «Обновить файлы».</p>':''}
-  ${tasks.length?`<label class="control-field">Личная задача <select id="sdo-task-choice">${tasks.map((task,i)=>
-   `<option value="${i}">${safe(task.text)}</option>`).join('')}</select></label>
-   <button type="button" id="sdo-link-task">Привязать к задаче</button>`:''}`);
+  <div id="sdo-pick-task"></div>`);
+ paintSdoTaskChoice($('#sdo-pick-task'),item,false);
  $('#sdo-edit-item').onclick=()=>editSdoItem(item);
  $('#sdo-sync-materials')?.addEventListener('click',()=>window.OrbitaAndroid.syncSdoPortal(item.url));
  const taskButton=$('#sdo-new-task');
@@ -503,11 +542,7 @@ function showSdoItem(item){
   $('#sdo-export-file').onclick=()=>window.OrbitaAndroid?.exportSdoFile?.(item.id);
   $('#sdo-remove-file').onclick=()=>confirmSdoRemoval([item.id]);
  }
- const link=$('#sdo-link-task');
- if(link)link.onclick=()=>{
-  const task=tasks[Number($('#sdo-task-choice').value)];
-  if(task&&setSdoAttachment(task.workId,item.id))toast('Материал прикреплён к задаче');
- };
+
 }
 
 window.addSdoTaskLinks=(task,anchor)=>{

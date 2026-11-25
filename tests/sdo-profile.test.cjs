@@ -48,6 +48,20 @@ for(const file of ['sdo-model.js','profile-backup.js'])
  assert.equal(restored.sdo.attachments.work_1[0],fileId);
  assert(!ctx.sameSdoDiscipline(discipline,{...discipline,term:2}));
  assert.equal(ctx.mergeProfileBackup(restored,copy,false).sdo.items.length,2);
+ const philosophy='https://online-edu.mirea.ru/course/view.php?id=900';
+ const philosophyId='sdo_'+'f'.repeat(32), folderId='sdo_'+'d'.repeat(32);
+ const restoredCourse=ctx.cleanSdoProfile({items:[
+  {id:philosophyId,title:'Философия',url:philosophy},
+  {id:folderId,title:'Практические занятия',url:'https://online-edu.mirea.ru/mod/folder/view.php?id=90',courseId:philosophyId,kind:'folder'},
+  {id:'sdo_'+'e'.repeat(32),title:'Методичка',url:'https://online-edu.mirea.ru/pluginfile.php/32/mod_folder/content/0/practice.pdf',
+   source:'portal',assignmentId:folderId},
+  {id:'sdo_'+'1'.repeat(32),title:'Презентация',url:'https://online-edu.mirea.ru/mod/resource/view.php?id=90',
+   source:'portal',moodleCourse:philosophy}
+ ]});
+ assert.equal(restoredCourse.items[2].courseId,philosophyId);
+ assert.equal(restoredCourse.items[3].courseId,philosophyId);
+ assert.equal(ctx.sdoDisplayTitle('Практические занятия Папка','folder',true),'Практические занятия');
+ assert.equal(ctx.readableSdoFile('ЛБ_Перечень работ.docx'),'ЛБ Перечень работ');
  const legacy=await ctx.parseProfileBackup(JSON.stringify({tasks:[task]}));
  assert.equal(ctx.mergeProfileBackup(restored,legacy,false).sdo.items.length,2);
  console.log('PASS official link allowlist, secret stripping, semester links, duplicate import and profile compatibility');

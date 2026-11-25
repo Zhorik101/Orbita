@@ -41,4 +41,6 @@ const folder=scan('/mod/folder/view.php?id=12','<div role="main">Пустая о
 assert.deepEqual(folder,[{url:'https://online-edu.mirea.ru/pluginfile.php/32/mod_folder/content/0/L1.pdf',title:'Л1.pdf',section:''}]);
 const assignment=scan('/mod/assign/view.php?id=8','<main><div id="intro">Изучи методичку</div></main>');
 assert.deepEqual(assignment,[{description:'Изучи методичку'}]);
+const pdfList=Array.from({length:16},(_,i)=>'<a href="/pluginfile.php/32/mod_folder/content/0/'+(i+1)+'.pdf">Лекция '+(i+1)+'</a>').join('');
+assert.equal(scan('/mod/folder/view.php?id=12','<div class="foldertree">'+pdfList+'</div>').length,16);
 console.log('PASS visible course links, section titles, duplicate and secret stripping in portal DOM fixture');

@@ -48,6 +48,7 @@ function cleanSdoProfile(value){
   const courseId=typeof input.courseId==='string'&&/^sdo_[a-f0-9]{32}$/.test(input.courseId)?input.courseId:'';
   items.push({id:input.id,title,url,document,courseId,
    assignmentId:typeof input.assignmentId==='string'&&/^sdo_[a-f0-9]{32}$/.test(input.assignmentId)?input.assignmentId:'',
+   moodleCourse:canonicalSdoLink(input.moodleCourse).includes('/course/view.php?')?canonicalSdoLink(input.moodleCourse):'',
    sourceId:typeof input.sourceId==='string'&&/^sdo_[a-f0-9]{32}$/.test(input.sourceId)?input.sourceId:'',
    source:input.source==='portal'?'portal':'manual',
    kind:courseUrl?'course':Object.hasOwn(sdoKinds,input.kind)&&input.kind!=='course'?input.kind:'other',
@@ -68,7 +69,18 @@ function cleanSdoProfile(value){
    if(valid.length)attachments[key]=valid;
   }
  }
- return {items:repairLegacySdoCourseLinks(items),attachments};
+ const byId=new Map(items.map(item=>[item.id,item]));
+ const coursesByUrl=new Map(items.filter(item=>item.kind==='course').map(item=>[item.url,item.id]));
+ const repaired=items.map(item=>{
+  if(item.kind==='course'||item.source!=='portal')return item;
+  const parent=byId.get(item.assignmentId);
+  const direct=coursesByUrl.get(item.moodleCourse);
+  const parentCourse=byId.get(parent?.courseId);
+  const current=byId.get(item.courseId);
+  const courseId=direct||(current?.kind!=='course'&&parentCourse?.kind==='course'?parentCourse.id:item.courseId);
+  return courseId!==item.courseId?{...item,courseId}:item;
+ });
+ return {items:repairLegacySdoCourseLinks(repaired),attachments};
 }
 function mergeSdoProfiles(current,incoming,allowedTaskIds){
  const saved=cleanSdoProfile(current),copy=cleanSdoProfile(incoming);
@@ -80,6 +92,7 @@ function mergeSdoProfiles(current,incoming,allowedTaskIds){
   if(allowedTaskIds.has(task))attachments[task]=[...new Set([...(attachments[task]||[]),...list.map(id=>remap.get(id)||id)])];
  }
  return cleanSdoProfile({items:items.map(item=>({...item,courseId:remap.get(item.courseId)||item.courseId,
+  sourceId:remap.get(item.sourceId)||item.sourceId,
   assignmentId:remap.get(item.assignmentId)||item.assignmentId})),attachments});
 }
 
@@ -121,4 +134,12 @@ function inferSdoDiscipline(title,courses){
  if(!best)return null;
  const equallySpecific=matches.filter(match=>normalize(match.name).length===normalize(best.name).length);
  return equallySpecific.every(match=>sameSdoDiscipline(best,match))?best:null;
+}
+
+function sdoDisplayTitle(title,kind,portal){
+ const suffix={folder:'Папка',assignment:'Задание',quiz:'Тест',forum:'Форум',page:'Страница',material:'Файл'}[kind];
+ return portal&&suffix?title.replace(new RegExp('\\s+'+suffix+'$','i'),'').trim()||title:title;
+}
+function readableSdoFile(title){
+ return title.replace(/\.[a-z0-9]{2,6}$/i,'').replace(/_/g,' ').replace(/\s+/g,' ').trim()||title;
 }
