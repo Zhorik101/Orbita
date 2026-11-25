@@ -89,6 +89,23 @@ final class SdoMaterials {
         return results.toString();
     }
 
+    void importPortalDocument(String value) {
+        if (value == null || value.length() > 2000) return;
+        Uri uri=Uri.parse(value);
+        var segments=uri.getPathSegments();
+        if (!"content".equals(uri.getScheme()) || !(activity.getPackageName()+".materials").equals(uri.getAuthority())
+                || segments.size()!=2 || !"portal-incoming".equals(segments.get(0))
+                || !segments.get(1).matches("sdo-portal-[0-9]+\\.part")) return;
+        IO.execute(()->{
+            cancelled=false;
+            try {
+                finish("Файл сохранён в библиотеке.",new JSONArray().put(importOne(uri)));
+            } catch (ImportFailure error) { finish(error.getMessage(),new JSONArray()); }
+            catch (Exception error) { finish("Не удалось добавить документ в библиотеку.",new JSONArray()); }
+            finally { new File(new File(activity.getCacheDir(),"sdo-portal-downloads"),segments.get(1)).delete(); }
+        });
+    }
+
     void choose() {
         if (busy || !exporting.isEmpty()) { finish("Дождись окончания текущей операции.", new JSONArray()); return; }
         try {

@@ -1,4 +1,4 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="ru.mirea.orbita" android:versionCode="105" android:versionName="2.1.0-beta12">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="ru.mirea.orbita" android:versionCode="106" android:versionName="2.1.0-beta13">
   <uses-permission android:name="android.permission.INTERNET" />
   <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
   <uses-permission android:name="android.permission.CAMERA" />
@@ -41,6 +41,7 @@
         android:exported="false" android:grantUriPermissions="true">
         <meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/sdo_material_paths" />
     </provider>
+    <activity android:name=".SdoPortalActivity" android:exported="false" android:process=":sdo" android:configChanges="orientation|screenSize|keyboardHidden" android:windowSoftInputMode="adjustResize" />
     <activity android:name=".PulseGradesActivity" android:exported="false" android:configChanges="orientation|screenSize|keyboardHidden" android:windowSoftInputMode="adjustResize"/>
     <activity android:name=".AttendanceScannerActivity" android:exported="false" android:screenOrientation="portrait"/>
     <activity android:name=".QuickTaskActivity" android:exported="false" android:theme="@style/QuickTaskTheme"

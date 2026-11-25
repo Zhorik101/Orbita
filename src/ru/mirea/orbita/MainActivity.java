@@ -28,7 +28,7 @@ public class MainActivity extends Activity {
     private GoogleWorkAttachment attachments;
     private volatile int topInset, bottomInset, keyboardInset;
     private boolean pageReady;
-    private String pendingBackupScript;
+    private String pendingBackupScript, pendingSdoPortalScript;
     private final java.util.concurrent.ExecutorService scheduleNetwork=java.util.concurrent.Executors.newFixedThreadPool(2);
     private static final String ORIGIN = "https://orbita.local/";
 
@@ -97,6 +97,10 @@ public class MainActivity extends Activity {
                 syncWidgetTasks();
                 importScheduleChanges();
                 dispatchAppIntent();
+                if (pendingSdoPortalScript != null) {
+                    view.evaluateJavascript(pendingSdoPortalScript, null);
+                    pendingSdoPortalScript = null;
+                }
                 if (pendingBackupScript != null) {
                     view.evaluateJavascript(pendingBackupScript, null);
                     pendingBackupScript = null;
@@ -192,6 +196,14 @@ public class MainActivity extends Activity {
             runOnUiThread(new Runnable(){@Override public void run(){try{startActivity(Intent.createChooser(new Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT,"Приглашение в команду Орбиты: "+link),"Пригласить в команду"));}catch(Exception ignored){}}});
         }
 
+        @JavascriptInterface public void openSdoPortal(String url) {
+            if (!SdoPortalLinks.portal(url)) return;
+            String page = SdoPortalLinks.bookmark(url);
+            if (page.isEmpty()) page = "https://online-edu.mirea.ru/my/courses.php".equals(url) ? url : SdoPortalLinks.HOME;
+            String target = page;
+            runOnUiThread(() -> startActivityForResult(new Intent(MainActivity.this,SdoPortalActivity.class)
+                .putExtra("url",target),SdoPortalActivity.REQUEST));
+        }
         @JavascriptInterface public String sdoFiles() { return sdoMaterials.list(); }
         @JavascriptInterface public void importSdoFiles() { runOnUiThread(sdoMaterials::choose); }
         @JavascriptInterface public void cancelSdoImport() { sdoMaterials.cancel(); }
@@ -589,6 +601,27 @@ public class MainActivity extends Activity {
             return;
         }
 
+        if (requestCode == SdoPortalActivity.REQUEST) {
+            if (resultCode == RESULT_OK && data != null) {
+                String document = data.getStringExtra("sdoDocument");
+                if (document != null) {
+                    sdoMaterials.importPortalDocument(document);
+                    return;
+                }
+                String payload = data.getStringExtra("sdoImport");
+                String url = SdoPortalLinks.bookmark(data.getStringExtra("sdoUrl"));
+                String title = data.getStringExtra("sdoTitle");
+                String script = payload != null && payload.length() <= 50000
+                    ? "window.orbitaSdoPortalImport?.(" + JSONObject.quote(payload) + ")"
+                    : url.isEmpty() ? "" : "window.orbitaSdoPortalBookmark?.(" +
+                        JSONObject.quote(url) + "," + JSONObject.quote(title == null ? "" : title) + ")";
+                if (!script.isEmpty()) {
+                    if (pageReady && web != null) web.evaluateJavascript(script, null);
+                    else pendingSdoPortalScript = script;
+                }
+            }
+            return;
+        }
         if (sdoMaterials.onResult(requestCode,resultCode,data)) return;
         if (backupFiles.onResult(requestCode,resultCode,data)) return;
         if (attachments.onResult(requestCode,resultCode,data)) return;
