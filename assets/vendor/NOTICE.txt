@@ -1,0 +1,5 @@
+ical.js 2.2.1, Mozilla Public License 2.0.
+Unmodified distribution: ical.es5.cjs, copied as ical.js.
+License: ICAL-LICENSE.txt.
+Preferred source: https://github.com/kewisch/ical.js/tree/v2.2.1
+Package source: https://www.npmjs.com/package/ical.js/v/2.2.1

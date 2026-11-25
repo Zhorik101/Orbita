@@ -1,0 +1,8 @@
+<resources>
+    <color name="orbita_amber_background">#925122</color>
+    <color name="orbita_blue_background">#2554A4</color>
+    <color name="orbita_dark_background">#171C31</color>
+    <color name="orbita_green_background">#246450</color>
+    <color name="orbita_rose_background">#A43E68</color>
+    <color name="orbita_violet_background">#5A46BB</color>
+</resources>

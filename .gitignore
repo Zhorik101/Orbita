@@ -1,0 +1,9 @@
+/build/
+/.gradle/
+local.properties
+*.jks
+*.keystore
+*.apk
+.env*
+client_secret*.json
+google-services.json
