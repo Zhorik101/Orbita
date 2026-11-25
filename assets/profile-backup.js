@@ -4,7 +4,7 @@ const backupVersion=1;
 const backupLimit=2_000_000;
 const backupText=new TextEncoder();
 const backupSettings={
- group:'string',theme:'string',lightTheme:'string',compact:'boolean',appearanceMode:'string',
+ group:'string',theme:'string',lightTheme:'string',compact:'boolean',appearanceMode:'string',glassEffect:'string',
  launcherIcon:'string',syncLauncherIcon:'boolean',attendanceScannerDock:'boolean',
  scheduleChangePush:'boolean',indoorCampus:'string',welcomeComplete:'boolean'
 };

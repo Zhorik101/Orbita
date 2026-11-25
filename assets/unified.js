@@ -12,7 +12,7 @@ window.orbitaSetInsets=function(values){
 try{if(window.OrbitaAndroid?.insets)window.orbitaSetInsets(JSON.parse(window.OrbitaAndroid.insets()));else if(window.orbitaInsets)window.orbitaSetInsets(window.orbitaInsets)}catch{}
 function updateChromeGlass(){
  const progress=Math.min(1,Math.max(0,window.scrollY/48));
- document.documentElement.style.setProperty('--chrome-blur',(progress*18).toFixed(1)+'px');
+ document.documentElement.style.setProperty('--chrome-progress',progress.toFixed(3));
  document.documentElement.style.setProperty('--chrome-tint',(.07+progress*.28).toFixed(3));
  document.body.classList.toggle('scrolled',progress>.05);
 }

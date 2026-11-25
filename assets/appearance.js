@@ -30,6 +30,41 @@ function appearancePalette(accent,background,custom=true){
  const text=readableText(background),toward=text==='#ffffff'?'#ffffff':'#000000';
  return {accent,background,text,panel:mixColor(background,toward,.065),line:mixColor(background,toward,.14),muted:mixColor(background,text,.62),soft:mixColor(background,accent,.2),onAccent:readableText(accent),dark:text==='#ffffff'};
 }
+const glassModes=['off','low','normal'];
+state.glassEffect=glassModes.includes(state.glassEffect)?state.glassEffect:'normal';
+
+function glassPalette(palette, mode){
+ const {panel,background,accent,text,muted,line,dark}=palette;
+ if(mode==='off')return {'--glass-surface':panel,'--glass-chrome':panel,'--glass-solid':panel,'--glass-edge':line,
+  '--glass-highlight':'transparent','--glass-blur':'0px','--glass-toolbar-blur':'0px','--glass-dialog-blur':'0px'};
+ const contrast=Math.abs(luminance(panel)-luminance(background));
+ const tint=mixColor(panel,accent,dark?.055:.035);
+ const low=mode==='low';
+ // Keep foreground contrast even when a bright or dark part of the page scrolls under the glass.
+ let opacity=low?.96:Math.max(dark?.88:.90,.88+contrast*.3);
+ while(opacity<1&&['#000000','#ffffff'].some(underlay=>colorContrast(text,mixColor(underlay,tint,opacity))<4.5)){
+  opacity=Math.min(1,opacity+.02);
+ }
+ const backgrounds=['#000000','#ffffff'].map(underlay=>mixColor(underlay,tint,opacity));
+ const rgba=(color,alpha)=>`rgba(${rgb(color).join(',')},${alpha.toFixed(3)})`;
+ return {'--glass-surface':rgba(tint,opacity),'--glass-chrome':rgba(tint,Math.min(1,opacity+.02)),
+  '--glass-solid':tint,'--glass-edge':mixColor(line,accent,dark?.27:.20),
+  '--glass-highlight':rgba(accent,dark?.12:.08),
+  '--glass-text':ensureContrast(text,readableText(tint),...backgrounds),
+  '--glass-muted':ensureContrast(muted,text,...backgrounds),
+  '--glass-accent-text':ensureContrast(accent,text,...backgrounds),
+  '--glass-blur':low?'5px':'18px','--glass-toolbar-blur':low?'3px':'14px',
+  '--glass-dialog-blur':low?'0px':'8px'};
+}
+function applyGlass(palette){
+ const reduced=window.matchMedia('(prefers-reduced-transparency: reduce)').matches;
+ const mode=state.glassEffect==='normal'&&reduced?'low':state.glassEffect;
+ document.body.dataset.glass=mode;
+ const vars=glassPalette(palette,mode);
+ for(const [key,value] of Object.entries(vars))document.body.style.setProperty(key,value);
+ const input=$('#glass-effect');
+ if(input)input.value=state.glassEffect;
+}
 state.appearanceMode=state.appearanceMode==='custom'?'custom':'preset';
 state.customAppearance={accent:'#a9c4ff',background:'#000000',...state.customAppearance};
 if(!validColor(state.customAppearance.accent)||!validColor(state.customAppearance.background))state.customAppearance={accent:'#a9c4ff',background:'#000000'};
@@ -38,6 +73,19 @@ function courseChevron(direction='right'){
  return `<svg class="row-chevron chevron-${direction}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 5 7 7-7 7"/></svg>`;
 }
 $('#settings-page').innerHTML=`<div class="settings-layout"><section class="settings-intro"><span class="eyebrow">ТВОЁ ПРОСТРАНСТВО</span><h2>Настройки</h2><p>Пусть приложение выглядит по-твоему.</p></section><section class="settings-section"><div class="settings-section-title"><span class="settings-section-icon">${icon('people')}</span><div><h3>Учёба</h3><p>Группа запоминается между запусками</p></div></div><button class="settings-link" id="settings-group"><span>Моя группа</span><b id="settings-group-name"></b>${courseChevron()}</button></section><section class="settings-section"><div class="settings-section-title"><span class="settings-section-icon">◈</span><div><h3>Готовые темы</h3><p>Выбери шаблон одним касанием</p></div></div><div id="theme-options" class="preset-grid"></div></section><section class="settings-section custom-theme-section"><div class="settings-section-title"><span class="settings-section-icon">✦</span><div><h3>Своя тема</h3><p>Отдельно от готовых шаблонов</p></div></div><button class="settings-link custom-theme-entry" id="open-custom-theme"><span class="custom-color-pair"><i id="custom-bg-dot"></i><i id="custom-accent-dot"></i></span><span><b>Акцент и фон</b><small id="custom-mode-label"></small></span>${courseChevron()}</button><div id="custom-theme-editor" hidden><div class="custom-preview" id="custom-theme-preview"><div class="preview-header"><span>Твоя тема</span><i>●</i></div><div class="preview-lesson"><span>14:20<small>15:50</small></span><div><b>Следующая пара</b><p>Аудитория А-308</p></div></div><div class="preview-nav"><span>⌂</span><span class="preview-selected">▦</span><span>☑</span><span>⚙</span></div></div><div class="color-field"><span><b>Акцентный цвет</b><small>Кнопки, выбранный день и выделения</small></span><button type="button" class="color-swatch" id="custom-accent" aria-haspopup="dialog" aria-label="Выбрать цвет: акцентный цвет"></button><input type="text" id="custom-accent-hex" aria-label="Акцентный цвет HEX" maxlength="7" spellcheck="false"></div><div class="color-field"><span><b>Цвет фона</b><small>Основной фон приложения</small></span><button type="button" class="color-swatch" id="custom-background" aria-haspopup="dialog" aria-label="Выбрать цвет: цвет фона"></button><input type="text" id="custom-background-hex" aria-label="Цвет фона HEX" maxlength="7" spellcheck="false"></div><p class="color-hint" id="custom-color-hint">Яркие оттенки фона смягчаются. Предпросмотр показывает итоговые цвета.</p><div class="custom-editor-actions"><button id="cancel-custom-theme">Отмена</button><button class="primary" id="apply-custom-theme">Применить свою тему</button></div></div></section><section class="settings-section"><div class="settings-section-title"><span class="settings-section-icon">${icon('grid')}</span><div><h3>Главный экран</h3><p>Твои карточки и порядок</p></div></div><button class="settings-link" id="settings-edit-home"><span>Настроить карточки</span>${courseChevron()}</button><label class="setting-row"><span>Компактное расписание<small>Меньше отступов в карточках</small></span><input type="checkbox" id="compact"></label></section><section class="settings-about"><b>Орбита <span>2.1.0-beta6</span></b><p>Расписание демонстрационное.<br>Настройки и заметки хранятся на устройстве.</p></section></div>`;
+const glassSettings=document.createElement('section');
+glassSettings.className='settings-section';
+glassSettings.innerHTML='<label class="setting-row"><span>Эффект стекла</span>'+
+ '<select id="glass-effect"><option value="off">Выключено</option><option value="low">Слабое</option>'+
+ '<option value="normal">Обычное</option></select></label>';
+$('.settings-about').before(glassSettings);
+$('#glass-effect').onchange=event=>{
+ const previous=state.glassEffect;
+ state.glassEffect=event.target.value;
+ if(!save())state.glassEffect=previous;
+ applyTheme();
+};
+window.matchMedia('(prefers-reduced-transparency: reduce)').addEventListener?.('change',()=>applyTheme());
 function renderPresetChoices(){
  $('#theme-options').innerHTML=Object.entries(themes).map(([key,values])=>{
   const selected=state.appearanceMode==='preset'&&state.theme===key,accent=key==='dark'?'#a9c4ff':values[1],bg=key==='dark'?'#08090d':'#f5f5fa',panel=key==='dark'?'#1b1e27':'#ffffff';
@@ -58,6 +106,7 @@ applyTheme=function(){
  else palette=appearancePalette(document.documentElement.style.getPropertyValue('--accent')||themes[state.theme][1],state.theme==='dark'?'#000000':'#f4f5f9',false);
  const vars={'--accent':palette.accent,'--bg':palette.background,'--text':palette.text,'--panel':palette.panel,'--line':palette.line,'--muted':palette.muted,'--accent-soft':palette.soft,'--on-accent':palette.onAccent};
  for(const [key,value] of Object.entries(vars)){document.documentElement.style.setProperty(key,value);document.body.style.setProperty(key,value);}
+ applyGlass(palette);
  document.body.classList.toggle('dark-theme',palette.dark);document.body.dataset.appearance=state.appearanceMode;
  document.documentElement.style.colorScheme=palette.dark?'dark':'light';
  document.querySelector('meta[name="theme-color"]').content=palette.background;
