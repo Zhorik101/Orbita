@@ -43,6 +43,7 @@ function localBackupData(source){
   .filter(item=>required.some(key=>typeof item[key]==='string'&&item[key].trim())):[];
  const data={
   tasks:list(source.tasks,backupTaskFields,['text']),
+  ...(typeof cleanSdoProfile==='function'?{sdo:cleanSdoProfile(source.sdo)}:{}),
   ...(typeof cleanDebtMarks==='function'?{debtMarks:cleanDebtMarks(source.debtMarks),academicRetakes:cleanAcademicRetakes(source.academicRetakes)}:{}),
   ...(typeof controlEventList==='function'?{controlEvents:controlEventList(source.controlEvents)}:{}),
   notebooks:list(source.notebooks,backupNoteFields,['body','title']),
@@ -116,7 +117,7 @@ function mergeProfileBackup(current, data, settings){
  };
  const taskText=task=>JSON.stringify(['text','subject','dueISO','due','comment'].map(key=>task[key]||''));
  const noteText=note=>JSON.stringify([note.title||'',note.body||'']);
- const {tasks,notebooks,notes,homeNote,controlEvents,debtMarks,academicRetakes,...preferences}=data;
+ const {tasks,notebooks,notes,homeNote,controlEvents,debtMarks,academicRetakes,sdo,...preferences}=data;
  const mergedTasks=addUnique(current.tasks,tasks,'workId',taskText);
  const mergedEvents=typeof controlEventList==='function'?controlEventList([
   ...controlEventList(current.controlEvents),
@@ -136,8 +137,11 @@ function mergeProfileBackup(current, data, settings){
    return original&&restored&&taskText(original)===taskText(restored);
   })
  ):null;
+ const allowedSdoTasks=new Set(tasks.filter(task=>mergedTasks.some(restored=>restored.workId===task.workId
+  &&taskText(restored)===taskText(task))).map(task=>task.workId));
  return {...current,...(settings?preferences:{}),
   tasks:mergedTasks,
+  ...(typeof mergeSdoProfiles==='function'?{sdo:mergeSdoProfiles(current.sdo,sdo,allowedSdoTasks)}:{}),
   ...(mergedEvents?{controlEvents:mergedEvents}:{}),
   ...(restoredMarks?{debtMarks:{...restoredMarks,...cleanDebtMarks(current.debtMarks)},
    academicRetakes:cleanAcademicRetakes([...(current.academicRetakes||[]),...(academicRetakes||[])])}:{}),

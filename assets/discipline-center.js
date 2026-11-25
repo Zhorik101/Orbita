@@ -111,9 +111,10 @@ function paintDiscipline(){
    ${pending.length?`<ul>${disciplineTaskList(pending)}</ul>`:'<p>Открытых заданий нет.</p>'}`)
   +disciplinePanel('Командные задания','<p>В общих работах предмет хранится в описании. Открой команду, чтобы посмотреть список.</p><button type="button" data-discipline-action="teams">Открыть команды</button>')
   +disciplinePanel('История результатов',`<p>Выполненные личные задания</p>${completed.length?`<ul>${disciplineTaskList(completed,true)}</ul>`:'<p>Выполненных заданий пока нет.</p>'}<p>В БРС доступна текущая сводка баллов.</p>`))
-  +disciplinePane('materials',disciplinePanel('Учебные материалы',
+  +disciplinePane('materials',window.sdoDisciplinePanel?.({name,id:score?.id||id,term:score?.term||term})||disciplinePanel('Учебные материалы',
    '<button type="button" data-discipline-action="sdo">Открыть СДО МИРЭА ↗</button><p>Вложения доступны в личных заданиях.</p>'));
  const overview=$('#discipline-overview');
+ window.bindSdoDiscipline?.(overview,{name,id:score?.id||id,term:score?.term||term});
  selectDisciplineTab(disciplineTab);
  if(focusedTab)$('#discipline-tab-'+focusedTab)?.focus({preventScroll:true});
  overview.querySelectorAll('[data-discipline-tab]').forEach((button,index)=>{
@@ -143,7 +144,7 @@ function paintDiscipline(){
   },
   add:()=>addTask(name),
   teams:()=>showPage('mini-team'),
-  sdo:()=>{window.location.href='https://online-edu.mirea.ru/'}
+  sdo:()=>window.openSdo?.({name,id:score?.id||id,term:score?.term||term})
  };
  overview.querySelectorAll('[data-discipline-action]').forEach(button=>button.onclick=actions[button.dataset.disciplineAction]);
  overview.querySelectorAll('[data-discipline-task]').forEach(button=>button.onclick=()=>addTask(null,{workId:pending[Number(button.dataset.disciplineTask)].workId}));
