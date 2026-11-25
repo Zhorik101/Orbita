@@ -32,6 +32,10 @@ public class MireaAttendanceTest {
         expectFailure("format", () -> MireaAcademicApi.collectAttendance(List.of("a", "b"), id -> id.equals("a") ? EMPTY : number(8, 4)));
         expectFailure("network", () -> MireaAcademicApi.collectAttendance(List.of("a"), id -> { throw new IOException(); }));
         check(MireaAcademicApi.collectAttendance(List.of("a"), id -> wrapped).absent() == 1);
+        byte[] unknown = message(1, concat(message(1, number(2, 9)), message(2, message(2, number(1, START)))));
+        byte[] defaultMark = message(1, concat(message(1, EMPTY), message(2, message(2, number(1, START)))));
+        var mixedStatuses = MireaAcademicApi.collectAttendance(List.of("a"), id -> concat(unknown, defaultMark, present));
+        check(mixedStatuses.total() == 3 && mixedStatuses.present() == 1 && mixedStatuses.absent() == 0 && !mixedStatuses.partial());
         byte[] unmarked = message(1, message(2, message(2, number(1, START))));
         check(MireaAcademicApi.collectAttendance(List.of("a"), id -> unmarked).total() == 0);
         byte[] stats = message(2, concat(number(1, 18), number(2, 9), number(3, 2), number(4, 5)));

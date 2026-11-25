@@ -434,12 +434,17 @@ final class MireaAcademicApi {
                 continue;
             }
             if (seconds < 1_500_000_000L || seconds > 4_102_444_800L) { complete = false; continue; }
+            // A protobuf enum can be omitted when it has its default value, or gain new values.
+            // Keep the dated lesson with an unknown status when the attendance message itself is valid.
+            var markFields = safeMessages(row, 1);
+            long markCount = row.stream().filter(field -> field.number() == 1).count();
+            if (markCount == 0) continue;
+            if (markCount != 1 || markFields.size() != 1) { complete = false; continue; }
             Double type = number(attendance, 2);
-            if (type == null && row.stream().noneMatch(field -> field.number() == 1)) continue; // Lesson without a submitted mark.
-            if (type == null || (type != 1 && type != 2 && type != 3)) { complete = false; continue; }
+            int status = type != null && (type == 1 || type == 2 || type == 3) ? type.intValue() : 0;
             if (seconds > now + 120) continue;
             String lessonId = string(lesson, 1);
-            result.add(new AttendanceEntry(seconds.longValue(), type.intValue(), lessonId.matches(UUID) ? lessonId : ""));
+            result.add(new AttendanceEntry(seconds.longValue(), status, lessonId.matches(UUID) ? lessonId : ""));
         }
         return complete;
     }

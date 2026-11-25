@@ -347,6 +347,9 @@ public class MainActivity extends Activity {
                     try { result.put("error", error instanceof MireaAcademicApi.SignInRequired ? "login" : "network"); }
                     catch (org.json.JSONException ignored) {}
                 }
+                android.util.Log.i("OrbitaAttendance", "request=" + requestId + " method=daily stage=day-entries journals=0 parsed="
+                    + (result.optJSONArray("entries") == null ? 0 : result.optJSONArray("entries").length())
+                    + " code=" + result.optString("error", "ok"));
                 String callback = "window.orbitaMireaDailyMarks?.(" + requestId + "," + result + ")";
                 runOnUiThread(() -> {
                     if (web != null && !isFinishing() && !isDestroyed()) web.evaluateJavascript(callback, null);
@@ -398,7 +401,7 @@ public class MainActivity extends Activity {
                     try { result.put("error", code); } catch (org.json.JSONException ignored) {}
                 }
                 android.util.Log.i("OrbitaAttendance", "request=" + requestId + " journals=" + journals
-                    + " parsed=" + parsed + " stage=" + stage + " code=" + code);
+                    + " parsed=" + parsed + " stage=" + stage + " method=" + ("journal-summary".equals(stage) ? "summary" : "detail") + " code=" + code);
                 String callback = "window.orbitaMireaAttendance?.(" + requestId + "," + result + ")";
                 runOnUiThread(() -> {
                     if (web == null || isFinishing() || isDestroyed()) return;
