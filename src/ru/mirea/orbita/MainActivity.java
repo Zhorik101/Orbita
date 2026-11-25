@@ -191,6 +191,27 @@ public class MainActivity extends Activity {
         @JavascriptInterface public String calendarSyncStatus() { return CalendarSync.statusText(MainActivity.this); }
         @JavascriptInterface public String calendarTargets() { return CalendarImport.calendars(MainActivity.this); }
         @JavascriptInterface public void requestCalendarAccess() { runOnUiThread(new Runnable(){@Override public void run(){requestPermissions(new String[]{"android.permission.READ_CALENDAR","android.permission.WRITE_CALENDAR"},991);}}); }
+        @JavascriptInterface public void saveControlCalendar(int requestId, String payload) {
+            if (payload == null || payload.length() > 16000) return;
+            scheduleNetwork.execute(() -> {
+                org.json.JSONObject result;
+                try {
+                    result = CalendarImport.saveControlEvent(MainActivity.this, payload);
+                } catch (Exception error) {
+                    result = new org.json.JSONObject();
+                    try {
+                        String message = error instanceof IllegalArgumentException || error instanceof IllegalStateException
+                            ? error.getMessage() : "Не удалось записать событие в календарь";
+                        result.put("ok", false).put("error", message);
+                    } catch (org.json.JSONException ignored) {}
+                }
+                String reply = result.toString();
+                runOnUiThread(() -> {
+                    if (web != null) web.evaluateJavascript("window.orbitaControlCalendarResult&&window.orbitaControlCalendarResult("
+                        + requestId + "," + reply + ")", null);
+                });
+            });
+        }
         @JavascriptInterface public void directCalendarExport(final String payload) {
             if(payload==null||payload.length()>4000000)return;
             scheduleNetwork.execute(new Runnable(){@Override public void run(){org.json.JSONObject result;

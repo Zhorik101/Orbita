@@ -19,3 +19,17 @@
 .discipline-panel li { padding: 10px 0; border-top: 1px solid var(--line); overflow-wrap: anywhere; }
 .discipline-panel li small { display: block; }
 .discipline-panel button { min-height: 44px; text-align: left; color: var(--accent); }
+.control-field { display: grid; gap: 6px; margin: 12px 0; }
+.control-field :is(input, select, textarea) {
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  padding: 8px;
+  box-sizing: border-box;
+  color: var(--text);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+.control-notes { white-space: pre-wrap; overflow-wrap: anywhere; }
+.control-task-discipline { overflow-wrap: anywhere; }

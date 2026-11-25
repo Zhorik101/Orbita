@@ -43,6 +43,7 @@ function localBackupData(source){
   .filter(item=>required.some(key=>typeof item[key]==='string'&&item[key].trim())):[];
  const data={
   tasks:list(source.tasks,backupTaskFields,['text']),
+  ...(typeof controlEventList==='function'?{controlEvents:controlEventList(source.controlEvents)}:{}),
   notebooks:list(source.notebooks,backupNoteFields,['body','title']),
   notes:isOrbitaRecord(source.notes)?Object.fromEntries(Object.entries(source.notes).filter(([,v])=>typeof v==='string')):{}
  };
@@ -90,7 +91,7 @@ async function parseProfileBackup(json){
   throw new Error('В файле нет профиля Орбиты.');
  if(typeof data.schemaVersion==='number'&&data.schemaVersion>orbitaSchemaVersion)
   throw new Error('Профиль создан в более новой версии Орбиты.');
- for(const key of ['tasks','notebooks','notes']){
+ for(const key of ['tasks','notebooks','notes','controlEvents']){
   if(key in data&&!(key==='notes'?isOrbitaRecord(data[key]):Array.isArray(data[key])))
    throw new Error('Один из разделов файла повреждён.');
  }
@@ -114,9 +115,19 @@ function mergeProfileBackup(current, data, settings){
  };
  const taskText=task=>JSON.stringify(['text','subject','dueISO','due','comment'].map(key=>task[key]||''));
  const noteText=note=>JSON.stringify([note.title||'',note.body||'']);
- const {tasks,notebooks,notes,homeNote,...preferences}=data;
+ const {tasks,notebooks,notes,homeNote,controlEvents,...preferences}=data;
+ const mergedTasks=addUnique(current.tasks,tasks,'workId',taskText);
+ const mergedEvents=typeof controlEventList==='function'?controlEventList([
+  ...controlEventList(current.controlEvents),
+  ...(controlEvents||[]).map(event=>{
+   const incoming=tasks.find(task=>task.workId===event.taskId);
+   const restored=mergedTasks.find(task=>task.workId===event.taskId);
+   return {...event,taskId:incoming&&restored&&taskText(incoming)===taskText(restored)?event.taskId:''};
+  })
+ ]):undefined;
  return {...current,...(settings?preferences:{}),
-  tasks:addUnique(current.tasks,tasks,'workId',taskText),
+  tasks:mergedTasks,
+  ...(mergedEvents?{controlEvents:mergedEvents}:{}),
   notebooks:addUnique(current.notebooks,notebooks,'id',noteText),
   notes:{...notes,...current.notes},
   homeNote:current.homeNote||homeNote||''
@@ -127,7 +138,7 @@ window.orbitaImportBackup=async json=>{
  try{
   const data=await parseProfileBackup(json);
   const lessonNotes=Object.keys(data.notes).length;
-  modal(`<h2>Импорт данных</h2><p>В файле: задач — ${data.tasks.length}, заметок — ${data.notebooks.length+lessonNotes+(data.homeNote?1:0)}.</p>
+  modal(`<h2>Импорт данных</h2><p>В файле: задач — ${data.tasks.length}, заметок — ${data.notebooks.length+lessonNotes+(data.homeNote?1:0)}, МТК — ${data.controlEvents?.length||0}.</p>
   <p>Существующие записи с тем же ID или содержанием сохранятся. Добавятся записи из копии.</p>
   <label class="setting-row"><span>Восстановить оформление и настройки</span><input id="profile-restore-settings" type="checkbox"></label>
   <button type="button" class="primary" id="profile-confirm-import">Объединить данные</button>`);

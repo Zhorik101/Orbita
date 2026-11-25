@@ -110,6 +110,7 @@ addTask=function(subjectPreset, options={}){
    const index=state.tasks.findIndex(task=>task.workId===original.workId);
    if(changeWork(index,'delete'))$('#modal').close();
   };
+  window.addControlTaskLink?.(original,$('#save-work-template'));
   $('#work-intro').textContent='';
   $('#work-intro').hidden=true;
   $('#work-number').value=initialNumber;

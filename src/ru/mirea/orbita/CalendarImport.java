@@ -23,6 +23,56 @@ public final class CalendarImport {
   return colors;
  }
  static String hash(String value)throws Exception{byte[] digest=java.security.MessageDigest.getInstance("SHA-256").digest(value.getBytes("UTF-8"));StringBuilder out=new StringBuilder();for(byte b:digest)out.append(String.format(java.util.Locale.ROOT,"%02x",b&255));return out.toString();}
+ // Each manual control event owns one provider row, independent of the schedule and task sync.
+ static synchronized JSONObject saveControlEvent(Context context, String payload) throws Exception {
+  if (!allowed(context)) throw new SecurityException("Нет доступа к календарю");
+  JSONObject event = new JSONObject(payload);
+  String id = event.getString("id"), title = event.getString("title").trim();
+  String description = event.optString("description");
+  long calendar = event.getLong("calendar"), start = event.getLong("start"), end = event.getLong("end");
+  boolean allDay = event.getBoolean("allDay");
+  long duration = allDay ? 86400000L : 3600000L;
+  if (!id.matches("mtk_[a-f0-9]{32}") || title.isEmpty() || title.length() > 450
+      || description.length() > 2000 || start <= 0 || start > 4102444800000L || end != start + duration
+      || (allDay && start % duration != 0)) throw new IllegalArgumentException("Проверь дату и название события");
+  JSONArray options = new JSONObject(calendars(context)).optJSONArray("calendars");
+  boolean validDestination = false;
+  if (options != null) for (int i = 0; i < options.length(); i++) {
+   JSONObject option = options.getJSONObject(i);
+   if (option.getLong("id") == calendar && "com.google".equals(option.optString("accountType"))) {
+    validDestination = true;
+    break;
+   }
+  }
+  if (!validDestination) throw new IllegalArgumentException("Выбранный Google Календарь недоступен");
+
+  ContentResolver resolver = context.getContentResolver();
+  String marker = "orbita://control/" + id;
+  Long existing = null;
+  try (Cursor cursor = resolver.query(CalendarContract.Events.CONTENT_URI, new String[]{"_id", "calendar_id"},
+    "customAppPackage=? AND customAppUri=? AND deleted=0", new String[]{context.getPackageName(), marker}, null)) {
+   if (cursor == null) throw new IllegalStateException("Не удалось прочитать календарь телефона");
+   if (cursor.moveToFirst()) {
+    if (cursor.getLong(1) != calendar) throw new IllegalArgumentException(
+      "Событие уже создано в другом календаре. Выбери тот же календарь, чтобы изменить его.");
+    existing = cursor.getLong(0);
+   }
+  }
+  ContentValues values = new ContentValues();
+  values.put("calendar_id", calendar);
+  values.put("title", title);
+  values.put("description", description);
+  values.put("dtstart", start);
+  values.put("dtend", end);
+  values.put("allDay", allDay ? 1 : 0);
+  values.put("eventTimezone", allDay ? "UTC" : "Europe/Moscow");
+  values.put("customAppPackage", context.getPackageName());
+  values.put("customAppUri", marker);
+  boolean saved = existing == null ? resolver.insert(CalendarContract.Events.CONTENT_URI, values) != null
+    : resolver.update(ContentUris.withAppendedId(CalendarContract.Events.CONTENT_URI, existing), values, null, null) == 1;
+  if (!saved) throw new IllegalStateException("Не удалось сохранить событие. Повтори попытку.");
+  return new JSONObject().put("ok", true);
+ }
  public static synchronized JSONObject perform(Context c,String payload)throws Exception{
   if(!allowed(c))throw new SecurityException("Нет разрешения на календарь");JSONObject data=new JSONObject(payload);long calendar=data.getLong("calendar"),from=data.getLong("from"),to=data.getLong("to");String scope=data.getString("scope");boolean tasks="tasks".equals(scope);JSONArray events=data.getJSONArray("events");if((!tasks&&!scope.matches("[1-3]:[0-9]{1,12}"))||from<=0||to<=from||(!tasks&&to-from>370L*86400000)||events.length()>3000)throw new Exception("Неверный период экспорта");JSONObject destination=null;JSONArray available=new JSONObject(calendars(c)).optJSONArray("calendars");if(available!=null)for(int i=0;i<available.length();i++)if(available.getJSONObject(i).getLong("id")==calendar)destination=available.getJSONObject(i);if(destination==null)throw new Exception("Выбранный календарь недоступен для записи");
   Set<String> palette=tasks?Collections.emptySet():googleEventColors(c,destination);

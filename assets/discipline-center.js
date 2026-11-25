@@ -86,12 +86,14 @@ function paintDiscipline(){
    <p role="status">${safe(upcoming.length?disciplineScheduleRequest||'':scheduleStatus)}</p>
    <p>${safe(window.disciplineUpdated(scheduleCache?.updated))}</p>
    ${activeTerm&&group?`<button type="button" data-discipline-action="schedule"${disciplineScheduleRequest==='Обновляем расписание…'?' disabled':''}>Обновить расписание</button>`:''}`)
+  +(window.controlEventsPanel?.({name,id:score?.id||id,term:score?.term||term})||'')
   +disciplinePanel('Личные задания',`<button type="button" data-discipline-action="add">+ Работа</button>
    ${pending.length?`<ul>${disciplineTaskList(pending)}</ul>`:'<p>Открытых заданий нет.</p>'}`)
   +disciplinePanel('Командные задания','<p>В общих работах предмет хранится в описании. Открой команду, чтобы посмотреть список.</p><button type="button" data-discipline-action="teams">Открыть команды</button>')
   +disciplinePanel('Учебные материалы','<button type="button" data-discipline-action="sdo">Открыть СДО МИРЭА ↗</button><p>Файлы, прикреплённые к личным заданиям, доступны в этих заданиях.</p>')
   +disciplinePanel('История результатов',`<p>Выполненные личные задания</p>${completed.length?`<ul>${disciplineTaskList(completed,true)}</ul>`:'<p>Выполненных заданий пока нет.</p>'}<p>В БРС доступна текущая сводка баллов.</p>`);
  const overview=$('#discipline-overview');
+ window.bindControlEvents?.(overview,{name,id:score?.id||id,term:score?.term||term});
  const scoreHistory=overview.querySelector('.course-attendance-link');
  if(scoreHistory)scoreHistory.remove();
  const actions={

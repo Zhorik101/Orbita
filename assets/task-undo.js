@@ -112,7 +112,10 @@ function paintCompletedWorks(){
   '" aria-label="Удалить '+safe(task.text)+'">Удалить</button></div>').join('')+
   '<button id="clear-completed-work">Очистить выполненные</button><div id="confirm-clear-completed" hidden>'+
   '<p>Удалить все выполненные задачи? Файлы на Google Диске останутся.</p><button id="confirm-completed-delete">Удалить все</button> <button id="cancel-completed-delete">Отмена</button></div>';
- list.querySelectorAll('[data-delete-completed]').forEach(button=>button.onclick=()=>confirmDeleteCompletedWork(button.dataset.deleteCompleted));
+ list.querySelectorAll('[data-delete-completed]').forEach((button,index)=>{
+  button.onclick=()=>confirmDeleteCompletedWork(button.dataset.deleteCompleted);
+  window.addControlTaskLink?.(done[index],button.previousElementSibling.lastElementChild);
+ });
  const confirmation=$('#confirm-clear-completed');
  $('#clear-completed-work').onclick=()=>{confirmation.hidden=false;$('#confirm-completed-delete').focus()};
  $('#cancel-completed-delete').onclick=()=>{confirmation.hidden=true;$('#clear-completed-work').focus()};
