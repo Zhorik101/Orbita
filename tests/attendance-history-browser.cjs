@@ -43,10 +43,10 @@ const {chromium}=require('playwright');
   await page.evaluate(()=>{
    const {id,day}=window.dayQueries.at(-1);
    const start=Date.parse(day+'T09:00:00+03:00')/1000;
-   const present={subject:'Философия',disciplineId:'philosophy',lessonId:'a',start,type:3,subgroup:'1'};
+   const present={subject:'Философия',disciplineId:'philosophy',lessonId:'a',start,type:3,subgroup:'1',teacher:'Иванова Анна'};
    window.orbitaMireaDailyMarks(id,{entries:[
     present,present,{...present,lessonId:'b',start:start+3600,type:1},
-    {...present,lessonId:'c',start:start+7200,type:99,subgroup:''},
+    {...present,lessonId:'c',start:start+7200,type:99,subgroup:'',teacher:''},
     {...present,lessonId:'e',start:start+10800,type:1,subgroup:'2'},{...present,disciplineId:'other',lessonId:'d',type:1}
    ]});
    window.orbitaMireaDailyMarks(window.dayQueries.at(-1).id,{error:'network'});
@@ -54,6 +54,22 @@ const {chromium}=require('playwright');
   assert.match(await history.innerText(),/Проверено 1 из 6 дат · получено записей: 3 · ошибок: 1/);
   assert.match(await history.innerText(),/Неизвестный статус: 1/);
   assert.match(await history.innerText(),/Подгруппа не указана/);
+  assert.match(await history.innerText(),/Иванова Анна/);
+  assert.match(await history.innerText(),/Моя подгруппа 1/);
+  const results=await page.evaluate(()=>{
+   const original=officialUnfilteredLessons;
+   const start=Date.parse('2026-11-10T09:00:00+03:00')/1000;
+   const row={start,type:3};
+   const lesson={title:'Философия',start:'09:00',teacher:'Миронов Иван',subgroup:'2'};
+   officialUnfilteredLessons=()=>[lesson];
+   const unique=attendanceLessonDetails([row],'Философия')[0];
+   const paired=attendanceLessonDetails([row,{...row,type:1}],'Философия')[0];
+   officialUnfilteredLessons=()=>[lesson,{...lesson,subgroup:'1'}];
+   const ambiguous=attendanceLessonDetails([row],'Философия')[0];
+   officialUnfilteredLessons=original;
+   return [unique.teacher,unique.subgroup,paired.teacher,ambiguous.teacher];
+  });
+  assert.deepEqual(results,['Миронов Иван','2',undefined,undefined]);
   assert.doesNotMatch(await history.innerText(),/Подгруппа 2/);
   assert.equal(await page.evaluate(()=>window.dayQueries.length),2);
   await page.locator('#attendance-refresh-days').click();

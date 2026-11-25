@@ -18,7 +18,7 @@ function normalizeOfficialResults(raw){
  return rows;
 }
 
-function officialLessons(target,date){
+function officialUnfilteredLessons(target,date){
  const key=calendarKey(target),cache=officialCache[key];if(!cache?.raw)return[];
  const month=dateKey(date).slice(0,7),parseKey=key+':'+month;
  let expanded=expandedCalendars.get(parseKey);
@@ -26,7 +26,10 @@ function officialLessons(target,date){
   const from=new Date(date.getFullYear(),date.getMonth()-1,1,12),to=new Date(date.getFullYear(),date.getMonth()+2,0,12);
   try{expanded={updated:cache.updated,days:expandOfficialCalendar(cache.raw,dateKey(from),dateKey(to))};expandedCalendars.set(parseKey,expanded)}catch(error){officialError='Не удалось прочитать календарь МИРЭА';return[]}
  }
- const rows=expanded.days[dateKey(date)]||[];
+ return expanded.days[dateKey(date)]||[];
+}
+function officialLessons(target,date){
+ const key=calendarKey(target),rows=officialUnfilteredLessons(target,date);
  const chosen=state.subgroups?.[key];
  return filterOwnLessons(rows,chosen,state.lessonVariants?.[key],state.hiddenLessonVariants?.[key]);
 }

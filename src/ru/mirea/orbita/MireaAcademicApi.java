@@ -25,7 +25,7 @@ final class MireaAcademicApi {
     record Category(String name, double points, Double maximum) {}
     record Course(String id, String name, int term, Double total, Double maximum, Double attendance,
                   List<Category> categories, Double threshold, String thresholdName, int present, int lessons) {}
-    record DailyMark(String subject, long start, int type, String disciplineId, String lessonId, String subgroup) {}
+    record DailyMark(String subject, long start, int type, String disciplineId, String lessonId, String subgroup, String teacher) {}
     private static final Map<String, String> CATEGORY_NAMES = categoryNames();
 
     private static Map<String, String> categoryNames() {
@@ -249,7 +249,7 @@ final class MireaAcademicApi {
                     recognized = true;
                     if (status.isEmpty() || start > java.time.Instant.now().getEpochSecond() + 120) continue;
                     marks.add(new DailyMark(subject, start.longValue(), type,
-                        disciplineId.matches(UUID) ? disciplineId : "", lessonId.matches(UUID) ? lessonId : "", lessonSubgroup(lesson)));
+                        disciplineId.matches(UUID) ? disciplineId : "", lessonId.matches(UUID) ? lessonId : "", lessonSubgroup(lesson), lessonTeacher(lesson)));
                 }
             }
         }
@@ -257,7 +257,7 @@ final class MireaAcademicApi {
         return marks;
     }
 
-    record AttendanceEntry(long start, int type, String lessonId, String subgroup) {}
+    record AttendanceEntry(long start, int type, String lessonId, String subgroup, String teacher) {}
     record Attendance(int present, int absent, int excused, int total, List<AttendanceEntry> entries,
                       int journals, boolean partial) {}
     static final class AttendanceFailure extends IOException {
@@ -447,9 +447,20 @@ final class MireaAcademicApi {
             int status = type != null && (type == 1 || type == 2 || type == 3) ? type.intValue() : 0;
             if (seconds > now + 120) continue;
             String lessonId = string(lesson, 1);
-            result.add(new AttendanceEntry(seconds.longValue(), status, lessonId.matches(UUID) ? lessonId : "", lessonSubgroup(lesson)));
+            result.add(new AttendanceEntry(seconds.longValue(), status, lessonId.matches(UUID) ? lessonId : "", lessonSubgroup(lesson), lessonTeacher(lesson)));
         }
         return complete;
+    }
+
+    private static String lessonTeacher(List<Field> lesson) {
+        var teacher = safeMessage(lesson, 7);
+        var names = new ArrayList<String>();
+        for (int field : new int[]{3, 2, 4}) {
+            String name = string(teacher, field);
+            if (!name.isBlank() && name.length() <= 100 && name.codePoints().anyMatch(Character::isLetter)
+                    && name.codePoints().noneMatch(code -> Character.isISOControl(code) || code == 0xfffd)) names.add(name);
+        }
+        return String.join(" ", names);
     }
 
     private static String lessonSubgroup(List<Field> lesson) {

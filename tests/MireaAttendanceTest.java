@@ -43,11 +43,13 @@ public class MireaAttendanceTest {
         check(summary.present() == 9 && summary.absent() == 5 && summary.total() == 18);
         check(MireaAcademicApi.attendanceSummary(MireaAcademicApi.fields(message(2, number(1, 3)))) == null);
         byte[] dailyLesson = concat(message(10, "Подгруппа № 2".getBytes(java.nio.charset.StandardCharsets.UTF_8)),
+            message(7, concat(message(2, "Анна".getBytes(java.nio.charset.StandardCharsets.UTF_8)),
+                message(3, "Иванова".getBytes(java.nio.charset.StandardCharsets.UTF_8)))),
             message(2, number(1, START)), message(4,
             message(2, "Философия".getBytes(java.nio.charset.StandardCharsets.UTF_8))));
         var daily = MireaAcademicApi.parseDailyMarks(MireaAcademicApi.fields(
             message(1, concat(message(3, dailyLesson), message(4, number(2, 1))))));
-        check(daily.size() == 1 && daily.get(0).type() == 3 && daily.get(0).start() == START && daily.get(0).subgroup().equals("2"));
+        check(daily.size() == 1 && daily.get(0).type() == 3 && daily.get(0).start() == START && daily.get(0).subgroup().equals("2") && daily.get(0).teacher().equals("Иванова Анна"));
         System.out.println("PASS attendance journals, nesting, confirmed empty, parse/network failures and retry");
     }
 

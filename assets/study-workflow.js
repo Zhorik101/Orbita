@@ -302,13 +302,38 @@ function attendanceSubgroupNotice(rows,subgroup){
  const unknown=rows.filter(row=>!row.subgroup).length;
  return `<p>Подгруппа ${subgroup}${unknown?' · записей без подгруппы: '+unknown:''}</p>`;
 }
+function attendanceLessonDetails(rows,name){
+ const target=state.pinnedGroup||state.officialGroup;
+ if(!target)return rows;
+ const byMinute=new Map();
+ for(const row of rows){
+  const minute=Math.floor(row.start/60);
+  byMinute.set(minute,(byMinute.get(minute)||0)+1);
+ }
+ const days=new Map(),subject=subjectKey(name);
+ return rows.map(row=>{
+  if(row.teacher&&row.subgroup||byMinute.get(Math.floor(row.start/60))!==1)return row;
+  const {date,time}=moscowParts(new Date(row.start*1000));
+  if(!days.has(date))days.set(date,officialUnfilteredLessons(target,new Date(date+'T12:00:00')));
+  const candidates=days.get(date).filter(lesson=>subjectKey(lesson.title)===subject&&lesson.start===time
+   &&(!row.subgroup||!lesson.subgroup||row.subgroup===lesson.subgroup));
+  if(candidates.length!==1)return row;
+  const [lesson]=candidates;
+  return {...row,teacher:row.teacher||lesson.teacher,subgroup:row.subgroup||lesson.subgroup};
+ });
+}
 function attendanceRowsHtml(rows,filter){
+ const own=selectedAttendanceSubgroup();
  const visible=rows.filter(row=>filter==='all'||Number(filter)===row.type)
   .slice().sort((a,b)=>b.start-a.start);
  if(!visible.length)return rows.length?'<p>По этому фильтру отметок нет.</p>':'';
  return `<div class="attendance-rows">${visible.map(row=>{
   const [label,kind]=attendanceTypes[row.type]||['Статус неизвестен','unknown'];
-  return `<div class="attendance-row ${kind}"><time>${lessonDateFormat.format(row.start*1000)}</time><b>${label}${row.subgroup?`<small>Подгруппа ${safe(row.subgroup)}</small>`:selectedAttendanceSubgroup()?'<small>Подгруппа не указана</small>':''}</b></div>`;
+  const subgroup=row.subgroup?(row.subgroup===own?'Моя подгруппа ':'Подгруппа ')+row.subgroup:'Подгруппа не указана';
+  return `<div class="attendance-row ${kind}"><div class="attendance-lesson">
+   <time>${lessonDateFormat.format(row.start*1000)}</time>
+   <small>${safe(row.teacher||'Преподаватель не указан')}</small><small>${safe(subgroup)}</small>
+  </div><b>${label}</b></div>`;
  }).join('')}</div>`;
 }
 function attendanceCountsHtml(rows,checked){
@@ -339,7 +364,7 @@ function paintAttendanceDialog(){
  }else if(!info.total){
   box.innerHTML=scope+'<p>МИРЭА не вернула отметок по предмету в доступных журналах.</p>'+refresh;
  }else{
-  const subgroup=selectedAttendanceSubgroup(),rows=attendanceForSubgroup(info.entries,subgroup);
+  const subgroup=selectedAttendanceSubgroup(),rows=attendanceForSubgroup(attendanceLessonDetails(info.entries,attendanceDialog.name),subgroup);
   box.innerHTML=`${scope}${attendanceSubgroupNotice(rows,subgroup)}<p>Источник: журнал дисциплины Пульса</p>
    <p>${safe(window.disciplineUpdated?.(info.updated)||'')}</p>
    ${info.partial?'<p>Загружена часть журналов.</p>':''}${refresh}
@@ -486,7 +511,7 @@ function paintRecentCourseAttendance(box){
  const missing=dialog.dates.find(date=>!dailyAttendance.has(dateKey(date)));
  if(!dialog.paused&&missing&&!dailyAttendanceRequests.size&&navigator.onLine!==false)requestDailyAttendance(missing);
  const {checked,failed,updated,rows:allRows}=summarizeCourseDays(dialog);
- const subgroup=selectedAttendanceSubgroup(),rows=attendanceForSubgroup(allRows,subgroup);
+ const subgroup=selectedAttendanceSubgroup(),rows=attendanceForSubgroup(attendanceLessonDetails(allRows,dialog.name),subgroup);
  const range=dialog.range||(dialog.dates.length?{from:dateKey(dialog.dates.at(-1)),to:dateKey(dialog.dates[0])}:null);
  const status=!dialog.dates.length?'В загруженном расписании нет дат по этой дисциплине.'
   :navigator.onLine===false?'Нет сети. Показаны доступные сохранённые отметки.'
