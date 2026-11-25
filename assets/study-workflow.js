@@ -289,8 +289,26 @@ window.orbitaMireaAttendance=(request,result)=>{
  if(attendanceDialog?.id===id&&$('#course-attendance-content')&&$('#modal').open)paintAttendanceDialog();
  if(page==='pairs')renderPairs();
 };
+function attendanceRowsHtml(rows,filter){
+ const visible=rows.filter(row=>filter==='all'||Number(filter)===row.type)
+  .slice().sort((a,b)=>b.start-a.start);
+ if(!visible.length)return rows.length?'<p>По этому фильтру отметок нет.</p>':'';
+ return `<div class="attendance-rows">${visible.map(row=>{
+  const [label,kind]=attendanceTypes[row.type]||['Статус неизвестен','unknown'];
+  return `<div class="attendance-row ${kind}"><time>${lessonDateFormat.format(row.start*1000)}</time><b>${label}</b></div>`;
+ }).join('')}</div>`;
+}
+function attendanceCountsHtml(rows,checked){
+ const counts={1:0,2:0,3:0};
+ for(const row of rows)if(row.type in counts)counts[row.type]++;
+ const cells=[[counts[3],'Присутствия'],[counts[1],'Пропуски'],[counts[2],'Уважительные']];
+ if(checked!==null)cells.push([checked,'Проверено дат']);
+ const unknown=rows.length-counts[1]-counts[2]-counts[3];
+ return `<div class="attendance-totals">${cells.map(([count,label])=>`<div><strong>${count}</strong><small>${label}</small></div>`).join('')}</div>
+  ${unknown?`<p>Неизвестный статус: ${unknown}</p>`:''}`;
+}
 function paintAttendanceDialog(){
- const box=$('#course-attendance-content'),{id}=attendanceDialog,info=attendanceByCourse.get(id);
+ const box=$('#course-attendance-content'),{id,filter}=attendanceDialog,info=attendanceByCourse.get(id);
  if(!info){
   box.innerHTML='<p>Загружаем посещения…</p>';
   if(attendanceDialog.daily)paintRecentCourseAttendance(box);
@@ -308,15 +326,10 @@ function paintAttendanceDialog(){
  }else if(!info.total){
   box.innerHTML=scope+'<p>МИРЭА не вернула отметок по предмету в доступных журналах.</p>'+refresh;
  }else{
-  box.innerHTML=`${scope}${info.partial?'<p>Загружена часть журналов.</p>':''}${refresh}<div class="attendance-totals">
-   <div><strong>${info.present}</strong><small>Присутствовал</small></div>
-   <div><strong>${info.absent}</strong><small>Отсутствовал</small></div>
-   <div><strong>${info.total}</strong><small>Всего</small></div>
-   </div>${info.excused?`<p>По уважительной причине: ${info.excused}</p>`:''}
-   <div class="attendance-rows">${info.entries.map(entry=>{
-    const [name,kind]=attendanceTypes[entry.type]||['Нет отметки','unknown'];
-    return `<div class="attendance-row ${kind}"><time>${lessonDateFormat.format(entry.start*1000)}</time><b>${name}</b></div>`;
-   }).join('')}</div>`;
+  box.innerHTML=`${scope}<p>Источник: журнал дисциплины Пульса</p>
+   <p>${safe(window.disciplineUpdated?.(info.updated)||'')}</p>
+   ${info.partial?'<p>Загружена часть журналов.</p>':''}${refresh}
+   ${attendanceCountsHtml(info.entries,null)}${attendanceRowsHtml(info.entries,filter)}`;
  }
  if((attendanceDialog.daily||!info.entries?.length)&&info.error!=='login')paintRecentCourseAttendance(box);
  $('#retry-course-attendance').onclick=()=>{
@@ -326,7 +339,7 @@ function paintAttendanceDialog(){
  };
 }
 function showCourseAttendance(id,name){
- attendanceDialog={id,name,dates:null,daily:false,period:'recent',paused:false};
+ attendanceDialog={id,name,dates:null,daily:false,period:'recent',paused:false,filter:'all'};
  if(attendanceByCourse.get(id)?.error && attendanceByCourse.get(id).error!=='login')attendanceByCourse.delete(id);
  modal(`<h2>Посещения по дисциплине</h2><p>${safe(name)}</p>
   ${window.OrbitaAndroid?.loadMireaDailyMarks?`<details id="attendance-period-options">
@@ -390,6 +403,7 @@ window.orbitaMireaDailyMarks=(request,result)=>{
  const key=dailyAttendanceRequests.get(request);
  if(!key||!takeMireaReply('day:'+request))return;
  dailyAttendanceRequests.delete(request);
+ result=Array.isArray(result?.entries)?{...result,updated:Date.now()}:{error:result?.error||'format'};
  dailyAttendance.set(key,result);
  if(page==='pairs'&&dateKey(pairsDate)===key)renderPairs();
  if(attendanceDialog?.dates&&$('#modal').open&&$('#course-attendance-content')){
@@ -427,12 +441,13 @@ function refreshCourseDays(dialog,force){
 }
 function summarizeCourseDays(dialog){
  const subject=subjectKey(dialog.name),identified=new Map(),distinct=[];
- let checked=0,failed=0;
+ let checked=0,failed=0,updated=0;
  for(const date of dialog.dates){
   const result=dailyAttendance.get(dateKey(date));
   if(result?.error){failed++;continue}
   if(!Array.isArray(result?.entries))continue;
   checked++;
+  updated=Math.max(updated,result.updated||0);
   for(const mark of result.entries){
    if(mark.disciplineId?mark.disciplineId!==dialog.id:subjectKey(mark.subject||'')!==subject)continue;
    if(!Number.isFinite(mark.start))continue;
@@ -443,7 +458,7 @@ function summarizeCourseDays(dialog){
    else if(previous.type!==entry.type)identified.set(mark.lessonId,{...previous,type:0});
   }
  }
- return {checked,failed,rows:[...distinct,...identified.values()].sort((a,b)=>b.start-a.start)};
+ return {checked,failed,updated,rows:[...distinct,...identified.values()].sort((a,b)=>b.start-a.start)};
 }
 function paintRecentCourseAttendance(box){
  if(!window.OrbitaAndroid?.loadMireaDailyMarks)return;
@@ -451,21 +466,23 @@ function paintRecentCourseAttendance(box){
  if(!dialog.dates)dialog.dates=recentCourseDates(dialog.name,null);
  const missing=dialog.dates.find(date=>!dailyAttendance.has(dateKey(date)));
  if(!dialog.paused&&missing&&!dailyAttendanceRequests.size&&navigator.onLine!==false)requestDailyAttendance(missing);
- const {checked,failed,rows}=summarizeCourseDays(dialog);
+ const {checked,failed,updated,rows}=summarizeCourseDays(dialog);
  const range=dialog.range||(dialog.dates.length?{from:dateKey(dialog.dates.at(-1)),to:dateKey(dialog.dates[0])}:null);
- const status=!range?'В загруженном расписании нет дат по этой дисциплине.'
+ const status=!dialog.dates.length?'В загруженном расписании нет дат по этой дисциплине.'
   :navigator.onLine===false?'Нет сети. Показаны доступные сохранённые отметки.'
   :dialog.paused?'Часть запросов завершилась ошибкой. Можно продолжить.'
   :checked===dialog.dates.length?'Проверены все найденные в расписании даты.':'Проверка дат продолжается…';
- box.insertAdjacentHTML('beforeend',`<section id="attendance-daily"><h3>Последние занятия · дневной журнал Пульса</h3>
-  ${range?`<p>${safe(range.from)} — ${safe(range.to)}</p>
-   <p role="status">Проверено ${checked} из ${dialog.dates.length} дат · получено записей: ${rows.length}${failed?' · ошибок: '+failed:''}</p>`:''}
-  <p>Показаны отметки за проверенные занятия. Полный журнал пока недоступен.</p><p>${status}</p>
+ const full=attendanceByCourse.get(dialog.id);
+ const heading=dialog.period==='recent'?'Последние занятия':dialog.period==='semester'?'Текущий семестр':'Выбранный диапазон';
+ box.insertAdjacentHTML('beforeend',`<section id="attendance-daily"><h3>${heading}</h3>
+  <p>Источник: дневной журнал Пульса</p>
+  ${range?`<p>${safe(range.from)} — ${safe(range.to)}</p>`:''}
+  ${updated?`<p>${safe(window.disciplineUpdated?.(updated)||'')}</p>`:''}
+  ${dialog.dates.length?`<p role="status">Проверено ${checked} из ${dialog.dates.length} дат · получено записей: ${rows.length}${failed?' · ошибок: '+failed:''}</p>`:''}
+  <p>${full?.entries?.length&&!full.partial?'Дневная выборка за проверенные даты.':'Показаны отметки за проверенные занятия. Полный журнал пока недоступен.'}</p>
+  <p>${status}</p>
   ${dialog.dates.length?`<button type="button" id="attendance-refresh-days">${failed?'Повторить и продолжить':'Обновить даты'}</button>`:''}
-  ${rows.length?`<div class="attendance-rows">${rows.map(mark=>{
-   const [label,kind]=attendanceTypes[mark.type]||['Статус неизвестен','unknown'];
-   return `<div class="attendance-row ${kind}"><time>${lessonDateFormat.format(mark.start*1000)}</time><b>${label}</b></div>`;
-  }).join('')}</div>`:''}</section>`);
+  ${checked?attendanceCountsHtml(rows,checked):''}${attendanceRowsHtml(rows,dialog.filter)}</section>`);
  const retry=$('#attendance-refresh-days');
  if(retry)retry.onclick=()=>{refreshCourseDays(dialog,!failed);paintAttendanceDialog()};
 }

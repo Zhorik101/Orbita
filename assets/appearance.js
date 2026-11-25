@@ -78,7 +78,7 @@ glassSettings.className='appearance-glass-control';
 glassSettings.innerHTML='<label class="setting-row"><span>Эффект стекла</span>'+
  '<select id="glass-effect"><option value="off">Выключено</option><option value="low">Слабое</option>'+
  '<option value="normal">Обычное</option></select></label>'+
- '<div class="glass-sample" aria-hidden="true"><i></i><i></i><span></span></div>';
+ '<figure class="glass-preview"><figcaption>Предпросмотр стекла</figcaption><div class="glass-sample" aria-hidden="true"><i></i><i></i><span></span></div></figure>';
 $('#theme-options').after(glassSettings);
 $('#glass-effect').onchange=event=>{
  const previous=state.glassEffect;
