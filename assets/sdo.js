@@ -83,7 +83,7 @@ window.orbitaSdoPortalImport=json=>{
  let payload;
  try{payload=JSON.parse(json)}catch{return}
  const batch=Array.isArray(payload?.pages);
- const pages=batch?payload.pages.slice(0,121):[payload];
+ const pages=batch?payload.pages.slice(0,501):[payload];
  if(batch&&Array.isArray(payload.resume)){
   try{localStorage.setItem(sdoResumeKey,JSON.stringify(payload.resume.slice(0,500)))}catch{}
  }
@@ -143,7 +143,7 @@ window.orbitaSdoPortalImport=json=>{
   paintSdo();
  }
  if(refreshedItem)showSdoItem(refreshedItem);
- if(batch){toast('Добавлено ссылок: '+added+(payload.skipped?' · Не проверено страниц: '+Number(payload.skipped):''));return}
+ if(batch){toast('Найдено файлов: '+(Number(payload.files)||0)+' · новых ссылок: '+added+' · пропущено страниц: '+(Number(payload.skipped)||0));return}
  toast(added?'Добавлено ссылок: '+added:updated?'Файлы привязаны к папке или заданию.':'Эти ссылки уже есть в каталоге или каталог заполнен.');
 };
 function sdoPortalActions(){

@@ -19,6 +19,7 @@ import java.util.ArrayList;
 import org.json.JSONObject;
 import java.io.ByteArrayInputStream;
 import java.io.InputStream;
+import java.io.File;
 
 public class MainActivity extends Activity {
     protected WebView web;
@@ -682,9 +683,25 @@ public class MainActivity extends Activity {
                     return;
                 }
                 String payload = data.getStringExtra("sdoImport");
+                String scanFile=data.getStringExtra("sdoScanFile");
+                if(scanFile!=null && scanFile.matches("sdo-scan-[0-9]+\\.json")){
+                    File result=new File(getCacheDir(),scanFile);
+                    try {
+                        if(result.length()>6000000)throw new java.io.IOException();
+                        try(var reader=new java.io.InputStreamReader(new java.io.FileInputStream(result),java.nio.charset.StandardCharsets.UTF_8)){
+                            StringBuilder content=new StringBuilder();
+                            char[] buffer=new char[8192];
+                            for(int size;(size=reader.read(buffer))!=-1;)content.append(buffer,0,size);
+                            payload=content.toString();
+                        }
+                    }catch(java.io.IOException ignored){data.putExtra("sdoScanFailed",true);}
+                    finally{result.delete();}
+                }
                 String url = SdoPortalLinks.bookmark(data.getStringExtra("sdoUrl"));
                 String title = data.getStringExtra("sdoTitle");
-                String script = payload != null && payload.length() <= 275000
+                String script = data.getBooleanExtra("sdoScanFailed",false)
+                    ? "toast(\"Не удалось сохранить результаты сканирования СДО.\")"
+                    : payload != null && payload.length() <= 1600000
                     ? "window.orbitaSdoPortalImport?.(" + JSONObject.quote(payload) + ")"
                     : url.isEmpty() ? "" : "window.orbitaSdoPortalBookmark?.(" +
                         JSONObject.quote(url) + "," + JSONObject.quote(title == null ? "" : title) + ")";

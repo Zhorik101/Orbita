@@ -14,7 +14,8 @@ function scan(path,html){
   Object.defineProperty(intro,'innerText',{value:intro.textContent});
  for(const heading of dom.window.document.querySelectorAll('h3'))
   Object.defineProperty(heading,'innerText',{value:heading.textContent});
- const links=JSON.parse(JSON.stringify(dom.window.eval(script)));
+ const raw=JSON.parse(JSON.stringify(dom.window.eval(script)));
+ const links=Array.isArray(raw)?raw.filter(item=>!item.settling):raw;
  dom.window.close();
  return links;
 }
@@ -44,3 +45,5 @@ assert.deepEqual(assignment,[{description:'Изучи методичку'}]);
 const pdfList=Array.from({length:16},(_,i)=>'<a href="/pluginfile.php/32/mod_folder/content/0/'+(i+1)+'.pdf">Лекция '+(i+1)+'</a>').join('');
 assert.equal(scan('/mod/folder/view.php?id=12','<div class="foldertree">'+pdfList+'</div>').length,16);
 console.log('PASS visible course links, section titles, duplicate and secret stripping in portal DOM fixture');
+
+module.exports={scan};

@@ -279,6 +279,28 @@ const {chromium}=require('playwright');
    const course=state.sdo.items.find(item=>item.title==='Философия');
    return state.sdo.items.filter(item=>item.courseId===course.id&&item.assignmentId===folder.id).length;
   }),16);
+  const {scan}=require('./sdo-portal-dom.test.cjs');
+  const origin='https://online-edu.mirea.ru', course=origin+'/course/view.php?id=97',
+   assignment=origin+'/mod/assign/view.php?id=78';
+  const courseLinks=scan('/course/view.php?id=97','<main><a href="'+assignment+'">Практические работы № 7 и № 8</a></main>');
+  const fileLinks=scan('/mod/assign/view.php?id=78','<main id="region-main">Загрузка задания</main><section id="intro">'+
+   '<a href="/pluginfile.php/97/mod_assign/introattachment/0/IT7.pdf">IT7.pdf</a>'+
+   '<a href="/pluginfile.php/97/mod_assign/intro/IT8.pdf?forcedownload=1"></a></section>');
+  assert.deepEqual(fileLinks.filter(row=>row.url).map(row=>row.title),['IT7.pdf','IT8.pdf']);
+  const importResult={files:2,skipped:0,resume:[],pages:[
+   {links:[{url:course,title:'Информационные технологии в химии'}]},
+   {course,links:courseLinks},{course,parent:assignment,links:fileLinks.filter(row=>row.url)}]};
+  await page.evaluate(result=>{
+   document.querySelector('#modal').close();
+   window.openSdo();
+   window.orbitaSdoPortalImport(JSON.stringify(result));
+  },importResult);
+  await page.getByRole('button',{name:/Информационные технологии в химии/}).click();
+  await page.getByRole('button',{name:/Практические работы № 7 и № 8/}).click();
+  assert.equal(await page.locator('#modal .sdo-file-list li').count(),2);
+  assert.match(await page.locator('#modal .sdo-file-list').innerText(),/IT7.pdf[\s\S]*IT8.pdf/);
+  await page.evaluate(result=>window.orbitaSdoPortalImport(JSON.stringify(result)),importResult);
+  assert.equal(await page.evaluate(()=>state.sdo.items.filter(item=>/^IT[78]\.pdf$/.test(item.title)).length),2);
   assert.deepEqual(errors,[]);
   console.log('PASS saved SDO links, manual course structure, task linking, import cancellation, offline bridge, profile and mobile UI');
  }finally{await browser.close()}
